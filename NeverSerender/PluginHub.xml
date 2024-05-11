@@ -22,6 +22,7 @@
     solution.
   </Description>
   <NuGetReferences>
-    <Config>NeverSerender/packages.config</Config>
+	  <PackageReference Include="SharpGLTF.Core" Version="1.0.0-alpha0031" />
+	  <PackageReference Include="Pfim" Version="0.11.2" />
   </NuGetReferences>
 </PluginData>

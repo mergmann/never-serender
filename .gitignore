@@ -355,8 +355,8 @@ MigrationBackup/
 ## Project specific extensions:
 
 # Symlinked Space Engineers DLL dependencies
-/Bin64/
-/Torch/
+/Bin64
+/Torch
 
 # JetBrains Rider project files
 /.idea/
