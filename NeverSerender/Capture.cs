@@ -1,74 +1,79 @@
 ﻿using Sandbox.Game.Entities;
+using SharpGLTF.Scenes;
+using SharpGLTF.Schema2;
 using System;
 using System.IO;
-using VRage.Game.Models;
 using VRage.Utils;
 
-namespace ClientPlugin
+namespace NeverSerender
 {
     public class Capture
     {
-        public static void CaptureGame(string path)
-        {
-            MyLog.Default.WriteLineAndConsole("NeverSerender Capture");
-            if (File.Exists(path))
-                File.Delete(path);
-            using (var file = File.OpenWrite(path))
-            {
-                var writer = new StreamWriter(file);
-                var converter = new TextureConverter("Z:/home/mattisb/steamapps/common/SpaceEngineers/Content/");
-                try
-                {
-                    foreach (var entity in MyEntities.GetEntities())
-                    {
-                        writer.WriteLine($"Entity DebugName={entity.DebugName} DisplayNameText={entity.DisplayNameText}");
-                        if (entity is MyCubeGrid grid)
-                        {
-                            writer.WriteLine($"Grid BlocksCount={grid.BlocksCount}");
-                            foreach (var block in grid.GetBlocks())
-                            {
-                                var definition = block.BlockDefinition;
-                                writer.WriteLine($"Block Name={definition.DisplayNameText} Model={definition.Model}");
-                                if (definition.CubeDefinition != null)
-                                {
-                                    var cubeDefinition = definition.CubeDefinition;
-                                    writer.WriteLine("Cube");
-                                    foreach (var model in cubeDefinition.Model)
-                                    {
-                                        writer.WriteLine($"Model={model}");
-                                        ExportModel(converter, model, writer);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                finally
-                {
-                    writer.Flush();
-                }
-            }
-        }
 
-        internal static void ExportModel(TextureConverter converter, string name, StreamWriter writer)
+        public static void CaptureGame(string logPath)
         {
-            var model = MyModels.GetModel(name);
-            writer.WriteLine($"Mode Name={model.AssetName} VertexCount={model.GetVerticesCount()} TriCount={model.GetTrianglesCount()}");
-            foreach (var mesh in model.GetMeshList())
+            string outputPath = "Z:/home/mattisb/semodel/model.gltf";
+            string libraryPath = "Z:/home/mattisb/setex/";
+            string contentPath = "Z:/home/mattisb/steamapps/common/SpaceEngineers/Content/";
+
+            MyLog.Default.WriteLineAndConsole("NeverSerender Capture");
+            if (File.Exists(logPath))
+                File.Delete(logPath);
+
+            using (var file = File.OpenWrite(logPath))
             {
-                writer.WriteLine($"Mesh Name={mesh.AssetName} IndexStart={mesh.IndexStart} TriStart={mesh.TriStart} TriCount={mesh.TriCount}");
-                var material = mesh.Material;
-                writer.WriteLine($"Material Name={material.Name} Draw={material.DrawTechnique} GlassCW={material.GlassCW} GlassCCW={material.GlassCCW} GlassSmooth={material.GlassSmooth}");
+                var log = new StreamWriter(file);
+                AssetLibrary assetLibrary;
                 try
                 {
-                    var processed = converter.ProcessMaterial(material);
-                    processed?.Save("Z:/home/mattisb/setex/");
-                    writer.WriteLine($"Material {material.Name} processed");
-                    writer.Flush();
+                    assetLibrary = AssetLibrary.Open(libraryPath, contentPath);
                 }
                 catch (Exception ex)
                 {
-                    writer.WriteLine($"Material {material.Name} errored: {ex}");
+                    log.WriteLine($"Asset library could not be opened: {ex}");
+                    assetLibrary = new AssetLibrary(libraryPath, contentPath);
+                }
+                var textureExporter = new TextureExporter(contentPath);
+                var exporter = new Exporter(log, assetLibrary, textureExporter);
+                var gltfScene = new SceneBuilder("Space Engineers Solar System");
+                try
+                {
+                    //foreach (var entity in MyEntities.GetEntities())
+                    //{
+                    //    log.WriteLine($"Entity DebugName={entity.DebugName} DisplayNameText={entity.DisplayNameText}");
+                    //    if (entity is MyCubeGrid grid)
+                    //    {
+                    //        log.WriteLine($"Grid BlocksCount={grid.BlocksCount}");
+                    //        var gltfNode = new NodeBuilder($"Grid {grid.Name}")
+                    //        {
+                    //            LocalTransform = Util.ConvertMatrix(grid.WorldMatrix)
+                    //        };
+                    //        foreach (var block in grid.GetBlocks())
+                    //        {
+                    //            try
+                    //            {
+                    //                exporter.ExportBlock(block, gltfScene, gltfNode);
+                    //            }
+                    //            catch (Exception ex)
+                    //            {
+                    //                log.WriteLine($"Grid Error={ex}");
+                    //            }
+                    //        }
+                    //    }
+                    //}
+
+                    log.WriteLine("Creating model");
+                    log.Flush();
+                    var gltfModel = gltfScene.ToGltf2();
+                    log.WriteLine("Saving model");
+                    log.Flush();
+                    gltfModel.SaveGLTF(outputPath);
+                    log.WriteLine("Done");
+                }
+                finally
+                {
+                    log.Flush();
+                    assetLibrary.Save();
                 }
             }
         }

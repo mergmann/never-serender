@@ -8,7 +8,7 @@ using VRage.Input;
 using VRage.Plugins;
 using VRage.Utils;
 
-namespace ClientPlugin
+namespace NeverSerender
 {
     // ReSharper disable once UnusedType.Global
     public class NeverSerenderPlugin : IPlugin, IDisposable

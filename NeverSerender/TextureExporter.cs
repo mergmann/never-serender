@@ -7,35 +7,30 @@ using System.IO;
 using VRageRender;
 using VRageRender.Models;
 
-namespace ClientPlugin
+namespace NeverSerender
 {
-    public class TextureConverter
+    public class TextureExporter
     {
         private readonly string contentPath;
-        private readonly Dictionary<string, Image<Rgba32>> colorMetalTextures;
-        private readonly Dictionary<string, Image<Rgba32>> normalGlossTextures;
-        private readonly Dictionary<string, Image<Rgba32>> addMapsTextures;
-        private readonly Dictionary<string, Image<Gray8>> alphaMaskTextures;
 
-        public TextureConverter(string contentPath)
+        public TextureExporter(string contentPath)
         {
             this.contentPath = contentPath;
-            colorMetalTextures = new Dictionary<string, Image<Rgba32>>();
-            normalGlossTextures = new Dictionary<string, Image<Rgba32>>();
-            addMapsTextures = new Dictionary<string, Image<Rgba32>>();
-            alphaMaskTextures = new Dictionary<string, Image<Gray8>>();
         }
 
-        private readonly IDictionary<string, MeshMaterial> processedMaterials = new Dictionary<string, MeshMaterial>();
+        private readonly IDictionary<string, Material> processedMaterials = new Dictionary<string, Material>();
 
-        public MeshMaterial ProcessMaterial(MyMeshMaterial material)
+        public bool ProcessMaterial(MyMeshMaterial material, out Material processed)
         {
             if (processedMaterials.TryGetValue(material.Name, out var value))
-                return null;
+            {
+                processed = value;
+                return false;
+            }
 
             var colorMetalAsset = material.Textures.Get("ColorMetalTexture");
             var normalGlossAsset = material.Textures.Get("NormalGlossTexture");
-            var addMapsAsset = material.Textures.Get("AddMapsTexture");
+            //var addMapsAsset = material.Textures.Get("AddMapsTexture");
             var alphaMaskAsset = material.Textures.Get("AlphamaskTexture");
 
             var colorMetalTexture = LoadDDS<Rgba32>(colorMetalAsset, ImageFormat.Rgba32);
@@ -53,7 +48,7 @@ namespace ClientPlugin
             if (alphaMaskTexture != null && alphaMaskTexture.Width != width && alphaMaskTexture.Height != height)
                 throw new ArgumentException("alphamask texture has a different size");
 
-            var colorAlphaTexture = new Image<Rgba32>(width, height);
+            var colorTexture = new Image<Rgba32>(width, height);
             var normalTexture = new Image<Rgb24>(width, height);
             var roughMetalTexture = new Image<Rgb24>(width, height);
 
@@ -63,13 +58,14 @@ namespace ClientPlugin
                 {
                     var colorMetal = colorMetalTexture[x, y];
                     var alpha = alphaMaskTexture?[x, y].PackedValue ?? 255;
-                    var RoughMetal = new Rgb24(0, 255, colorMetal.A);
-                    var colorAlpha = new Rgba32(colorMetal.B, colorMetal.G, colorMetal.R, alpha);
+                    var color = new Rgba32(colorMetal.B, colorMetal.G, colorMetal.R, alpha);
+                    var normal = new Rgb24(127, 127, 255);
+                    var roughMetal = new Rgb24(0, 255, colorMetal.A);
                     if (normalGlossTexture != null)
                     {
                         var normalGloss = normalGlossTexture[x, y];
-                        normalTexture[x, y] = new Rgb24(normalGloss.B, normalGloss.G, normalGloss.R);
-                        RoughMetal.G = (byte)(255 - normalGloss.A);
+                        normal = new Rgb24(normalGloss.B, normalGloss.G, normalGloss.R);
+                        roughMetal.G = (byte)(255 - normalGloss.A);
                     }
                     //if (addMapsTexture != null)
                     //{
@@ -85,20 +81,21 @@ namespace ClientPlugin
                     //        (byte)Math.Max(a / 255, 255)
                     //    );
                     //}
-                    colorAlphaTexture[x, y] = colorAlpha;
-                    roughMetalTexture[x, y] = RoughMetal;
+                    colorTexture[x, y] = color;
+                    normalTexture[x, y] = normal;
+                    roughMetalTexture[x, y] = roughMetal;
                 }
             }
 
-            var processed = new MeshMaterial
+            processed = new Material
             {
                 Name = material.Name,
-                Color = colorAlphaTexture,
-                Normal = normalGlossTexture != null ? normalTexture : null,
+                Color = colorTexture,
+                Normal = normalTexture,
                 RoughMetal = roughMetalTexture,
             };
             processedMaterials.Add(material.Name, processed);
-            return processed;
+            return true;
         }
 
         private Image<TPixel> LoadDDS<TPixel>(string asset, ImageFormat expected) where TPixel : struct, IPixel<TPixel>
@@ -111,27 +108,6 @@ namespace ClientPlugin
             if (dds.Format != expected)
                 throw new NotSupportedException($"Only {expected} is currently supported for texture {asset}");
             return Image.LoadPixelData<TPixel>(dds.Data, dds.Width, dds.Height);
-        }
-
-        public class MeshMaterial
-        {
-            public void Save(string dir)
-            {
-                var colorPath = Path.Combine(dir, Name + "_color.png");
-                var normalPath = Path.Combine(dir, Name + "_normal.png");
-                var roughMetalPath = Path.Combine(dir, Name + "_pbr.png");
-                using (var file = File.OpenWrite(colorPath))
-                    Color.SaveAsPng(file);
-                using (var file = File.OpenWrite(normalPath))
-                    Normal.SaveAsPng(file);
-                using (var file = File.OpenWrite(roughMetalPath))
-                    RoughMetal.SaveAsPng(file);
-            }
-
-            public string Name { get; set; }
-            public Image<Rgba32> Color { get; set; }
-            public Image<Rgb24> Normal { get; set; }
-            public Image<Rgb24> RoughMetal { get; set; }
         }
     }
 }
