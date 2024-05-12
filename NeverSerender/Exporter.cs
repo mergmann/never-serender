@@ -1,4 +1,5 @@
-﻿using Sandbox.Game.Entities.Cube;
+﻿using Sandbox.Game.Entities;
+using Sandbox.Game.Entities.Cube;
 using SharpGLTF.Geometry;
 using SharpGLTF.Geometry.VertexTypes;
 using SharpGLTF.Materials;
@@ -21,7 +22,7 @@ namespace NeverSerender
         private readonly TextureExporter textureExporter;
         private readonly IDictionary<string, MyModel> models;
         private readonly IDictionary<string, MaterialBuilder> gltfMaterials;
-        private readonly IDictionary<string, GLTFMesh> gltfModels;
+        private readonly IDictionary<string, GLTFMesh> gltfMeshes;
 
         public Exporter(StreamWriter log, AssetLibrary assetLibrary, TextureExporter textureExporter)
         {
@@ -30,36 +31,33 @@ namespace NeverSerender
             this.textureExporter = textureExporter;
             models = new Dictionary<string, MyModel>();
             gltfMaterials = new Dictionary<string, MaterialBuilder>();
-            gltfModels = new Dictionary<string, GLTFMesh>();
+            gltfMeshes = new Dictionary<string, GLTFMesh>();
         }
 
-        public void ExportBlock(MySlimBlock block, SceneBuilder gltfScene, NodeBuilder gltfRootNode)
+        public void ExportBlock(MyCubeBlock block, SceneBuilder gltfScene, NodeBuilder gltfParentNode)
         {
-            var definition = block.BlockDefinition;
-            log.WriteLine($"Block Name={definition.DisplayNameText} Model={definition.Model} Skin={block.SkinSubtypeId.String}");
-            block.GetLocalMatrix(out var localMatrix);
-            var gltfNode = gltfRootNode.CreateNode(definition.DisplayNameText);
-            gltfNode.LocalMatrix = Util.ConvertMatrix(localMatrix);
+            log.WriteLine($"Block Name={block.DisplayNameText} Model={block.Model} Skin={block.SlimBlock.SkinSubtypeId}");
+            var gltfNode = gltfParentNode.CreateNode(block.DisplayNameText);
 
-            if (block.BuildLevelRatio == 1.0)
-            {
-                if (!string.IsNullOrEmpty(definition.Model))
-                    gltfScene.AddRigidMesh(ExportModel(definition.Model), gltfNode);
-                if (definition.CubeDefinition != null)
-                {
-                    var cubeDefinition = definition.CubeDefinition;
-                    foreach (var model in cubeDefinition.Model)
-                    {
-                        var gltfSubNode = gltfNode.CreateNode($"Cube Model {model}");
-                        gltfScene.AddRigidMesh(ExportModel(model), gltfSubNode);
-                    }
-                }
-            }
-            else
-            {
-                var index = definition.GetBuildProgressModelIndex(block.BuildLevelRatio);
-                ExportModel(definition.BuildProgressModels[index].File);
-            }
+            block.GetLocalMatrix(out var matrix);
+            gltfNode.LocalMatrix = Util2.ConvertMatrix(matrix);
+            gltfScene.AddRigidMesh(ExportModel(block.Model), gltfNode);
+        }
+
+        public void ExportCell(MyCubeGridRenderCell cell, SceneBuilder gltfScene, NodeBuilder gltfParentNode)
+        {
+            var gltfNode = gltfParentNode.CreateNode($"Cube {cell.DebugName}");
+            foreach (var pair in cell.CubeParts)
+                ExportCubePart(pair.Key, gltfScene, gltfNode);
+        }
+
+        public void ExportCubePart(MyCubePart part, SceneBuilder gltfScene, NodeBuilder gltfParentNode)
+        {
+            log.WriteLine($"CubePart Model={part.Model} Skin={part.SkinSubtypeId}");
+            var data = part.InstanceData;
+            var gltfNode = gltfParentNode.CreateNode($"CubePart Model {part.Model}");
+            gltfNode.LocalMatrix = Util2.ConvertMatrix(data.LocalMatrix);
+            gltfScene.AddRigidMesh(ExportModel(part.Model), gltfNode);
         }
 
         public GLTFMesh ExportModel(string asset)
@@ -79,39 +77,46 @@ namespace NeverSerender
 
         public GLTFMesh ExportModel(MyModel model)
         {
-            log.WriteLine($"Model Name={model.AssetName} VertexCount={model.GetVerticesCount()} TriCount={model.GetTrianglesCount()}");
+            log.WriteLine($"\nModel Name={model.AssetName} VertexCount={model.GetVerticesCount()} TriCount={model.GetTrianglesCount()}");
 
-            if (gltfModels.TryGetValue(model.AssetName, out var gltfMesh))
+            if (gltfMeshes.TryGetValue(model.AssetName, out var gltfMesh))
                 return gltfMesh;
+
+            if (!model.HasUV)
+            {
+                model.LoadUV = true;
+                model.UnloadData();
+                model.LoadData();
+            }
 
             gltfMesh = GLTFVertex.CreateCompatibleMesh(model.AssetName);
 
             foreach (var mesh in model.GetMeshList())
             {
-                log.WriteLine($"Mesh Name={mesh.AssetName} IndexStart={mesh.IndexStart} TriStart={mesh.TriStart} TriCount={mesh.TriCount}");
                 var material = mesh.Material;
                 log.WriteLine($"Material Name={material.Name} Draw={material.DrawTechnique} GlassCW={material.GlassCW} GlassCCW={material.GlassCCW} GlassSmooth={material.GlassSmooth}");
                 var gltfMaterial = ExportMaterial(material);
                 var gltfPrimitive = gltfMesh.UsePrimitive(gltfMaterial);
+                log.WriteLine($"Mesh Name={mesh.AssetName} IndexStart={mesh.IndexStart} TriStart={mesh.TriStart} TriCount={mesh.TriCount}");
                 for (var i = 0; i < mesh.TriCount; i++)
                 {
                     var triangle = model.Triangles[i + mesh.TriStart];
-                    var v0 = Util.ConvertVector(model.GetVertex(triangle.I0));
-                    var v1 = Util.ConvertVector(model.GetVertex(triangle.I1));
-                    var v2 = Util.ConvertVector(model.GetVertex(triangle.I2));
-                    var n0 = Util.ConvertVector(model.GetVertexNormal(triangle.I0));
-                    var n1 = Util.ConvertVector(model.GetVertexNormal(triangle.I1));
-                    var n2 = Util.ConvertVector(model.GetVertexNormal(triangle.I2));
-                    var t0 = Util.ConvertVector(model.TexCoords[triangle.I0].ToVector2());
-                    var t1 = Util.ConvertVector(model.TexCoords[triangle.I1].ToVector2());
-                    var t2 = Util.ConvertVector(model.TexCoords[triangle.I2].ToVector2());
-                    gltfPrimitive.AddTriangle(
-                        ((v0, n0), t0),
-                        ((v1, n1), t1),
-                        ((v2, n2), t2)
-                    );
+                    var v0 = Util2.ConvertVector(model.GetVertex(triangle.I0));
+                    var v1 = Util2.ConvertVector(model.GetVertex(triangle.I1));
+                    var v2 = Util2.ConvertVector(model.GetVertex(triangle.I2));
+                    var n0 = Util2.ConvertVector(model.GetVertexNormal(triangle.I0));
+                    var n1 = Util2.ConvertVector(model.GetVertexNormal(triangle.I1));
+                    var n2 = Util2.ConvertVector(model.GetVertexNormal(triangle.I2));
+                    var t0 = Util2.ConvertVector(model.TexCoords[triangle.I0].ToVector2());
+                    var t1 = Util2.ConvertVector(model.TexCoords[triangle.I1].ToVector2());
+                    var t2 = Util2.ConvertVector(model.TexCoords[triangle.I2].ToVector2());
+                    gltfPrimitive.AddTriangle(((v0, n0), t0), ((v1, n1), t1), ((v2, n2), t2));
                 }
             }
+
+            log.WriteLine("Model end\n");
+
+            gltfMeshes.Add(model.AssetName, gltfMesh);
 
             return gltfMesh;
         }
@@ -126,12 +131,12 @@ namespace NeverSerender
             {
                 if (textureExporter.ProcessMaterial(material, out var processed))
                 {
-                    log.WriteLine($"Material {file.Name} processed");
+                    log.WriteLine($"Material {processed.Name} processed");
                     file = assetLibrary.AddMaterial(material, processed);
                 }
                 else
                 {
-                    log.WriteLine($"Material {file.Name} cached");
+                    log.WriteLine($"Material {processed.Name} cached");
                 }
             }
 

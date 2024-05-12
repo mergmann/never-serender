@@ -1,6 +1,5 @@
 ﻿using Sandbox.Game.Entities;
 using SharpGLTF.Scenes;
-using SharpGLTF.Schema2;
 using System;
 using System.IO;
 using VRage.Utils;
@@ -38,29 +37,42 @@ namespace NeverSerender
                 var gltfScene = new SceneBuilder("Space Engineers Solar System");
                 try
                 {
-                    //foreach (var entity in MyEntities.GetEntities())
-                    //{
-                    //    log.WriteLine($"Entity DebugName={entity.DebugName} DisplayNameText={entity.DisplayNameText}");
-                    //    if (entity is MyCubeGrid grid)
-                    //    {
-                    //        log.WriteLine($"Grid BlocksCount={grid.BlocksCount}");
-                    //        var gltfNode = new NodeBuilder($"Grid {grid.Name}")
-                    //        {
-                    //            LocalTransform = Util.ConvertMatrix(grid.WorldMatrix)
-                    //        };
-                    //        foreach (var block in grid.GetBlocks())
-                    //        {
-                    //            try
-                    //            {
-                    //                exporter.ExportBlock(block, gltfScene, gltfNode);
-                    //            }
-                    //            catch (Exception ex)
-                    //            {
-                    //                log.WriteLine($"Grid Error={ex}");
-                    //            }
-                    //        }
-                    //    }
-                    //}
+                    foreach (var entity in MyEntities.GetEntities())
+                    {
+                        log.WriteLine($"Entity DebugName={entity.DebugName} DisplayNameText={entity.DisplayNameText}");
+                        if (entity is MyCubeGrid grid)
+                        {
+                            log.WriteLine($"Grid BlocksCount={grid.BlocksCount}");
+                            var gltfNode = new NodeBuilder($"Grid {grid.Name}")
+                            {
+                                LocalMatrix = Util2.ConvertMatrix(grid.WorldMatrix)
+                            };
+                            foreach (var cell in grid.RenderData.Cells)
+                            {
+                                try
+                                {
+                                    exporter.ExportCell(cell.Value, gltfScene, gltfNode);
+                                }
+                                catch (Exception ex)
+                                {
+                                    log.WriteLine($"Grid Error={ex}");
+                                }
+                            }
+                            foreach (var block in grid.GetBlocks())
+                            {
+                                try
+                                {
+                                    if (block.FatBlock != null)
+                                        exporter.ExportBlock(block.FatBlock, gltfScene, gltfNode);
+                                }
+                                catch (Exception ex)
+                                {
+                                    log.WriteLine($"Grid Error={ex}");
+                                }
+                            }
+                            gltfScene.AddNode(gltfNode);
+                        }
+                    }
 
                     log.WriteLine("Creating model");
                     log.Flush();

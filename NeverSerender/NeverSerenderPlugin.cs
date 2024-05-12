@@ -19,6 +19,17 @@ namespace NeverSerender
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
         public void Init(object gameInstance)
         {
+            AppDomain.CurrentDomain.AssemblyResolve += (s, e) =>
+            {
+                var name = new AssemblyName(e.Name);
+                MyLog.Default.WriteLineAndConsole($"Assembly load: {e.Name} from {e.RequestingAssembly}");
+                if (name.Name == "System.Numerics.Vectors" && name.Version == new Version(4, 1, 3, 0))
+                {
+                    MyLog.Default.WriteLineAndConsole($"Intercepting assembly load: {name}");
+                    return Util.SystemNumericsVector;
+                }
+                return null;
+            };
             Instance = this;
             Harmony harmony = new Harmony(Name);
             harmony.PatchAll(Assembly.GetExecutingAssembly());
