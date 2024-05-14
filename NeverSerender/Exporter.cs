@@ -5,8 +5,8 @@ using SharpGLTF.Geometry.VertexTypes;
 using SharpGLTF.Materials;
 using SharpGLTF.Scenes;
 using System.Collections.Generic;
-using System.IO;
 using VRage.Game.Models;
+using VRageMath;
 using VRageRender.Models;
 
 namespace NeverSerender
@@ -16,51 +16,47 @@ namespace NeverSerender
 
     public class Exporter
     {
-        private readonly StreamWriter log;
+        private readonly MiniLog log;
 
         private readonly AssetLibrary assetLibrary;
-        private readonly TextureExporter textureExporter;
         private readonly IDictionary<string, MyModel> models;
-        private readonly IDictionary<string, MaterialBuilder> gltfMaterials;
-        private readonly IDictionary<string, GLTFMesh> gltfMeshes;
+        private readonly IDictionary<AssetIdentifier, MaterialFiles> materials;
+        private readonly IDictionary<AssetIdentifier, MaterialBuilder> gltfMaterials;
+        private readonly IDictionary<AssetIdentifier, GLTFMesh> gltfMeshes;
 
-        public Exporter(StreamWriter log, AssetLibrary assetLibrary, TextureExporter textureExporter)
+        public Exporter(MiniLog log, AssetLibrary assetLibrary, TextureExporter textureExporter)
         {
             this.log = log;
             this.assetLibrary = assetLibrary;
-            this.textureExporter = textureExporter;
             models = new Dictionary<string, MyModel>();
-            gltfMaterials = new Dictionary<string, MaterialBuilder>();
-            gltfMeshes = new Dictionary<string, GLTFMesh>();
+            materials = new Dictionary<AssetIdentifier, MaterialFiles>();
+            gltfMaterials = new Dictionary<AssetIdentifier, MaterialBuilder>();
+            gltfMeshes = new Dictionary<AssetIdentifier, GLTFMesh>();
         }
 
-        public void ExportBlock(MyCubeBlock block, SceneBuilder gltfScene, NodeBuilder gltfParentNode)
+        public void PrepareBlock(MyCubeBlock block)
         {
-            log.WriteLine($"Block Name={block.DisplayNameText} Model={block.Model} Skin={block.SlimBlock.SkinSubtypeId}");
-            var gltfNode = gltfParentNode.CreateNode(block.DisplayNameText);
-
-            block.GetLocalMatrix(out var matrix);
-            gltfNode.LocalMatrix = Util2.ConvertMatrix(matrix);
-            gltfScene.AddRigidMesh(ExportModel(block.Model), gltfNode);
+            var slimBlock = block.SlimBlock;
+            log.WriteLine($"Prepare Block Name={block.DisplayNameText} Model={block.Model} Skin={slimBlock.SkinSubtypeId} Color={slimBlock.ColorMaskHSV}");
+            ExportModel(block.Model, slimBlock.SkinSubtypeId.String, slimBlock.ColorMaskHSV);
         }
 
-        public void ExportCell(MyCubeGridRenderCell cell, SceneBuilder gltfScene, NodeBuilder gltfParentNode)
+        public void PrepareCell(MyCubeGridRenderCell cell)
         {
-            var gltfNode = gltfParentNode.CreateNode($"Cube {cell.DebugName}");
+            log.WriteLine($"Prepare Cell Name={cell.DebugName}");
             foreach (var pair in cell.CubeParts)
-                ExportCubePart(pair.Key, gltfScene, gltfNode);
+                PrepareCubePart(pair.Key);
         }
 
-        public void ExportCubePart(MyCubePart part, SceneBuilder gltfScene, NodeBuilder gltfParentNode)
+        public void PrepareCubePart(MyCubePart part)
         {
-            log.WriteLine($"CubePart Model={part.Model} Skin={part.SkinSubtypeId}");
-            var data = part.InstanceData;
-            var gltfNode = gltfParentNode.CreateNode($"CubePart Model {part.Model}");
-            gltfNode.LocalMatrix = Util2.ConvertMatrix(data.LocalMatrix);
-            gltfScene.AddRigidMesh(ExportModel(part.Model), gltfNode);
+            log.WriteLine($"Prepare CubePart Model={part.Model.AssetName} Skin={part.SkinSubtypeId} Color={part.InstanceData.ColorMaskHSV}");
+            var color4 = part.InstanceData.ColorMaskHSV;
+            var color = new Vector3(color4.X, color4.Y, color4.Z);
+            PrepareModel(part.Model, part.SkinSubtypeId.String, color);
         }
 
-        public GLTFMesh ExportModel(string asset)
+        public void PrepareModel(string asset, string skin, Vector3 color)
         {
             if (!models.TryGetValue(asset, out var model))
             {
@@ -72,14 +68,86 @@ namespace NeverSerender
                 models.Add(asset, model);
             }
 
-            return ExportModel(model);
+            PrepareModel(model, skin, color);
         }
 
-        public GLTFMesh ExportModel(MyModel model)
+        public void PrepareModel(MyModel model, string skin, Vector3 color)
+        {
+            log.WriteLine($"\nPrepare Model Name={model.AssetName} VertexCount={model.GetVerticesCount()} TriCount={model.GetTrianglesCount()}");
+
+            if (!model.HasUV)
+            {
+                model.LoadUV = true;
+                model.UnloadData();
+                model.LoadData();
+            }
+
+            foreach (var mesh in model.GetMeshList())
+                PrepareMaterial(mesh.Material, skin, color);
+        }
+
+        public void PrepareMaterial(MyMeshMaterial material, string skin, Vector3 color)
+        {
+            log.WriteLine($"Prepare Material Name={material.Name} Draw={material.DrawTechnique} GlassCW={material.GlassCW} GlassCCW={material.GlassCCW} GlassSmooth={material.GlassSmooth}");
+
+            var identifier = new AssetIdentifier(material.Name, skin, color);
+            if (materials.ContainsKey(identifier))
+                return;
+
+            var files = assetLibrary.GetMaterial(material, skin, color);
+            materials.Add(identifier, files);
+        }
+
+        public void ExportBlock(MyCubeBlock block, SceneBuilder gltfScene, NodeBuilder gltfParentNode)
+        {
+            var slimBlock = block.SlimBlock;
+            log.WriteLine($"Block Name={block.DisplayNameText} Model={block.Model} Skin={slimBlock.SkinSubtypeId} Color={slimBlock.ColorMaskHSV}");
+            var gltfNode = gltfParentNode.CreateNode(block.DisplayNameText);
+
+            block.GetLocalMatrix(out var matrix);
+            gltfNode.LocalMatrix = Util2.ConvertMatrix(matrix);
+            gltfScene.AddRigidMesh(ExportModel(block.Model, slimBlock.SkinSubtypeId.String, slimBlock.ColorMaskHSV), gltfNode);
+        }
+
+        public void ExportCell(MyCubeGridRenderCell cell, SceneBuilder gltfScene, NodeBuilder gltfParentNode)
+        {
+            log.WriteLine($"Cell Name={cell.DebugName}");
+            var gltfNode = gltfParentNode.CreateNode($"Cube {cell.DebugName}");
+            foreach (var pair in cell.CubeParts)
+                ExportCubePart(pair.Key, gltfScene, gltfNode);
+        }
+
+        public void ExportCubePart(MyCubePart part, SceneBuilder gltfScene, NodeBuilder gltfParentNode)
+        {
+            log.WriteLine($"CubePart Model={part.Model.AssetName} Skin={part.SkinSubtypeId} Color={part.InstanceData.ColorMaskHSV}");
+            var data = part.InstanceData;
+            var gltfNode = gltfParentNode.CreateNode($"CubePart Model {part.Model}");
+            gltfNode.LocalMatrix = Util2.ConvertMatrix(data.LocalMatrix);
+            var color4 = part.InstanceData.ColorMaskHSV;
+            var color = new Vector3(color4.X, color4.Y, color4.Z);
+            gltfScene.AddRigidMesh(ExportModel(part.Model, part.SkinSubtypeId.String, color), gltfNode);
+        }
+
+        public GLTFMesh ExportModel(string asset, string skin, Vector3 color)
+        {
+            if (!models.TryGetValue(asset, out var model))
+            {
+                model = new MyModel(asset)
+                {
+                    LoadUV = true,
+                };
+                model.LoadData();
+                models.Add(asset, model);
+            }
+
+            return ExportModel(model, skin, color);
+        }
+
+        public GLTFMesh ExportModel(MyModel model, string skin, Vector3 color)
         {
             log.WriteLine($"\nModel Name={model.AssetName} VertexCount={model.GetVerticesCount()} TriCount={model.GetTrianglesCount()}");
-
-            if (gltfMeshes.TryGetValue(model.AssetName, out var gltfMesh))
+            var identifier = new AssetIdentifier(model.AssetName, skin, color);
+            if (gltfMeshes.TryGetValue(identifier, out var gltfMesh))
                 return gltfMesh;
 
             if (!model.HasUV)
@@ -95,7 +163,7 @@ namespace NeverSerender
             {
                 var material = mesh.Material;
                 log.WriteLine($"Material Name={material.Name} Draw={material.DrawTechnique} GlassCW={material.GlassCW} GlassCCW={material.GlassCCW} GlassSmooth={material.GlassSmooth}");
-                var gltfMaterial = ExportMaterial(material);
+                var gltfMaterial = ExportMaterial(material, skin, color);
                 var gltfPrimitive = gltfMesh.UsePrimitive(gltfMaterial);
                 log.WriteLine($"Mesh Name={mesh.AssetName} IndexStart={mesh.IndexStart} TriStart={mesh.TriStart} TriCount={mesh.TriCount}");
                 for (var i = 0; i < mesh.TriCount; i++)
@@ -116,36 +184,25 @@ namespace NeverSerender
 
             log.WriteLine("Model end\n");
 
-            gltfMeshes.Add(model.AssetName, gltfMesh);
+            gltfMeshes.Add(identifier, gltfMesh);
 
             return gltfMesh;
         }
 
-        public MaterialBuilder ExportMaterial(MyMeshMaterial material)
+        public MaterialBuilder ExportMaterial(MyMeshMaterial material, string skin, Vector3 color)
         {
-            if (gltfMaterials.TryGetValue(material.Name, out var gltfMaterial))
+            var identifier = new AssetIdentifier(material.Name, skin, color);
+            if (gltfMaterials.TryGetValue(identifier, out var gltfMaterial))
                 return gltfMaterial;
 
-            var file = assetLibrary.GetMaterial(material);
-            if (file == null)
-            {
-                if (textureExporter.ProcessMaterial(material, out var processed))
-                {
-                    log.WriteLine($"Material {processed.Name} processed");
-                    file = assetLibrary.AddMaterial(material, processed);
-                }
-                else
-                {
-                    log.WriteLine($"Material {processed.Name} cached");
-                }
-            }
+            var files = materials[identifier];
 
             gltfMaterial = new MaterialBuilder()
                 .WithMetallicRoughnessShader()
-                .WithBaseColor(file.ColorPath)
-                .WithNormal(file.NormalPath)
-                .WithChannelImage(KnownChannel.MetallicRoughness, file.RoughMetalPath);
-            gltfMaterials.Add(file.Name, gltfMaterial);
+                .WithBaseColor(files.ColorPath)
+                .WithNormal(files.NormalPath)
+                .WithChannelImage(KnownChannel.MetallicRoughness, files.RoughMetalPath);
+            gltfMaterials.Add(identifier, gltfMaterial);
 
             return gltfMaterial;
         }

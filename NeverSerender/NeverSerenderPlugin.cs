@@ -43,10 +43,6 @@ namespace NeverSerender
 
         public void Update()
         {
-            if (MyInput.Static.IsMiddleMousePressed())
-            {
-                Environment.Exit(0);
-            }
             // TODO: Put your update code here. It is called on every simulation frame!
         }
 

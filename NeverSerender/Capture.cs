@@ -21,22 +21,51 @@ namespace NeverSerender
 
             using (var file = File.OpenWrite(logPath))
             {
-                var log = new StreamWriter(file);
-                AssetLibrary assetLibrary;
-                try
-                {
-                    assetLibrary = AssetLibrary.Open(libraryPath, contentPath);
-                }
-                catch (Exception ex)
-                {
-                    log.WriteLine($"Asset library could not be opened: {ex}");
-                    assetLibrary = new AssetLibrary(libraryPath, contentPath);
-                }
-                var textureExporter = new TextureExporter(contentPath);
+                var log = new MiniLog(new StreamWriter(file));
+                var assetLibrary = AssetLibrary.OpenOrNew(libraryPath, log);
+
+                var textureExporter = new TextureExporter(contentPath, log);
                 var exporter = new Exporter(log, assetLibrary, textureExporter);
-                var gltfScene = new SceneBuilder("Space Engineers Solar System");
                 try
                 {
+                    foreach (var entity in MyEntities.GetEntities())
+                    {
+                        log.WriteLine($"Prepare Entity DebugName={entity.DebugName} DisplayNameText={entity.DisplayNameText}");
+                        if (entity is MyCubeGrid grid)
+                        {
+                            log.WriteLine($"Prepare Grid BlocksCount={grid.BlocksCount}");
+                            foreach (var cell in grid.RenderData.Cells)
+                            {
+                                try
+                                {
+                                    exporter.PrepareCell(cell.Value);
+                                }
+                                catch (Exception ex)
+                                {
+                                    log.WriteLine($"Prepare Cell Error={ex}");
+                                }
+                            }
+                            foreach (var block in grid.GetBlocks())
+                            {
+                                try
+                                {
+                                    if (block.FatBlock != null)
+                                        exporter.PrepareBlock(block.FatBlock);
+                                }
+                                catch (Exception ex)
+                                {
+                                    log.WriteLine($"Prepare Block Error={ex}");
+                                }
+                            }
+                        }
+                    }
+
+                    log.WriteLine("\n---- Preparation done ----");
+                    log.WriteLine("Converting textures...");
+                    assetLibrary.ExportMissing(textureExporter);
+                    log.WriteLine("Exporting scene...\n");
+
+                    var gltfScene = new SceneBuilder("Space Engineers Solar System");
                     foreach (var entity in MyEntities.GetEntities())
                     {
                         log.WriteLine($"Entity DebugName={entity.DebugName} DisplayNameText={entity.DisplayNameText}");
@@ -55,7 +84,7 @@ namespace NeverSerender
                                 }
                                 catch (Exception ex)
                                 {
-                                    log.WriteLine($"Grid Error={ex}");
+                                    log.WriteLine($"Cell Error={ex}");
                                 }
                             }
                             foreach (var block in grid.GetBlocks())
@@ -67,7 +96,7 @@ namespace NeverSerender
                                 }
                                 catch (Exception ex)
                                 {
-                                    log.WriteLine($"Grid Error={ex}");
+                                    log.WriteLine($"Block Error={ex}");
                                 }
                             }
                             gltfScene.AddNode(gltfNode);
@@ -75,16 +104,17 @@ namespace NeverSerender
                     }
 
                     log.WriteLine("Creating model");
-                    log.Flush();
                     var gltfModel = gltfScene.ToGltf2();
                     log.WriteLine("Saving model");
-                    log.Flush();
                     gltfModel.SaveGLTF(outputPath);
                     log.WriteLine("Done");
                 }
+                catch (Exception ex)
+                {
+                    log.WriteLine($"Error {ex}");
+                }
                 finally
                 {
-                    log.Flush();
                     assetLibrary.Save();
                 }
             }

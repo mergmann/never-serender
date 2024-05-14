@@ -1,12 +1,13 @@
 ﻿using Newtonsoft.Json;
+using Sandbox.Definitions;
 using SixLabors.ImageSharp;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Security.Cryptography;
-using System.Text;
-using VRageRender;
+using System.Threading.Tasks;
+using VRageMath;
+using VRageRender.Messages;
 using VRageRender.Models;
 
 namespace NeverSerender
@@ -14,224 +15,370 @@ namespace NeverSerender
     public class AssetLibrary
     {
         private readonly string libraryPath;
-        private readonly string contentPath;
-        private readonly IDictionary<string, MaterialAsset> materials;
+        private uint current;
+        private readonly Dictionary<ColorTextureIdentifier, string> colorTextures;
+        private readonly Dictionary<PhysicalTextureIdentifier, PhysicalTextures> physicalTextures;
 
-        public static AssetLibrary Open(string libraryPath, string contentPath)
+        private readonly List<(ColorTextureIdentifier, string)> colorToExport;
+        private readonly List<(PhysicalTextureIdentifier, string)> physicalToExport;
+
+        private readonly Dictionary<AssetModifierIdentifier, AssetModifier> modifiers;
+
+        private readonly MiniLog log;
+
+        public static AssetLibrary OpenOrNew(string libraryPath, MiniLog log)
+        {
+            try
+            {
+                return Open(libraryPath, log);
+            }
+            catch
+            {
+                return new AssetLibrary(libraryPath, log);
+            }
+        }
+
+        public static AssetLibrary Open(string libraryPath, MiniLog log)
         {
             var indexPath = Path.Combine(libraryPath, "index.json");
-            var index = JsonConvert.DeserializeObject<Assets>(File.ReadAllText(indexPath));
-            var materials = index.Materials.ToDictionary(m => m.Name);
-            return new AssetLibrary(libraryPath, contentPath, materials);
+            var index = JsonConvert.DeserializeObject<AssetsIndex>(File.ReadAllText(indexPath));
+            var colorTextures = index.Color.ToDictionary(
+                t => new ColorTextureIdentifier(t.ColorMetal, t.AddMaps, t.AlphaMask, ConvertColor(t.Color)),
+                t => t.Ident
+            );
+            var physicalTextures = index.Physical.ToDictionary(
+                t => new PhysicalTextureIdentifier(t.ColorMetal, t.NormalGloss),
+                t => new PhysicalTextures { Normal = t.NormalIdent, RoughMetal = t.RoughMetalIdent }
+            );
+            return new AssetLibrary(libraryPath, index.Current, colorTextures, physicalTextures, log);
         }
 
-        public AssetLibrary(string libraryPath, string contentPath)
-        {
-            this.libraryPath = libraryPath;
-            this.contentPath = contentPath;
-            materials = new Dictionary<string, MaterialAsset>();
-        }
+        public AssetLibrary(string libraryPath, MiniLog log) : this(
+                libraryPath,
+                0,
+                new Dictionary<ColorTextureIdentifier, string>(),
+                new Dictionary<PhysicalTextureIdentifier, PhysicalTextures>(),
+                log)
+        { }
 
-        private AssetLibrary(string libraryPath, string contentPath, IDictionary<string, MaterialAsset> materials)
+        private AssetLibrary(
+            string libraryPath,
+            uint current,
+            Dictionary<ColorTextureIdentifier, string> colorTextures,
+            Dictionary<PhysicalTextureIdentifier, PhysicalTextures> physicalTextures,
+            MiniLog log)
         {
             this.libraryPath = libraryPath;
-            this.contentPath = contentPath;
-            this.materials = materials;
+
+            this.current = current;
+            this.colorTextures = colorTextures;
+            this.physicalTextures = physicalTextures;
+            this.log = log;
+
+            colorToExport = new List<(ColorTextureIdentifier, string)>();
+            physicalToExport = new List<(PhysicalTextureIdentifier, string)>();
+
+            modifiers = new Dictionary<AssetModifierIdentifier, AssetModifier>();
+            foreach (var modifier in MyDefinitionManager.Static.GetAssetModifierDefinitions())
+            {
+                foreach (var texture in modifier.Textures)
+                {
+                    var identifier = new AssetModifierIdentifier(texture.Location, modifier.Id.SubtypeName);
+                    if (!modifiers.TryGetValue(identifier, out var value))
+                    {
+                        value = new AssetModifier();
+                        modifiers.Add(identifier, value);
+                    }
+                    switch (texture.Type)
+                    {
+                        case MyTextureType.ColorMetal: value.ColorMetal = texture.Filepath; break;
+                        case MyTextureType.NormalGloss: value.NormalGloss = texture.Filepath; break;
+                        case MyTextureType.Extensions: value.AddMaps = texture.Filepath; break;
+                        case MyTextureType.Alphamask: value.AlphaMask = texture.Filepath; break;
+                    }
+                }
+            }
+            foreach (var modifier in modifiers)
+                log.WriteLine($"Modifier Asset={modifier.Key.asset} Skin={modifier.Key.skin}");
         }
 
         public void Save()
         {
             var indexPath = Path.Combine(libraryPath, "index.json");
-            var assets = new Assets
+            var assets = new AssetsIndex
             {
-                Materials = materials.Select(p => p.Value).ToList(),
+                Color = colorTextures
+                    .Select(t => new AssetsColor
+                    {
+                        ColorMetal = t.Key.colorMetal,
+                        AddMaps = t.Key.addMaps,
+                        AlphaMask = t.Key.alphaMask,
+                        Color = ConvertColor(t.Key.color),
+                        Ident = t.Value
+                    })
+                    .ToList(),
+                Physical = physicalTextures
+                    .Select(t => new AssetsPhysics
+                    {
+                        ColorMetal = t.Key.colorMetal,
+                        NormalGloss = t.Key.normalGloss,
+                        NormalIdent = t.Value.Normal,
+                        RoughMetalIdent = t.Value.RoughMetal
+                    })
+                    .ToList(),
+                Current = current,
             };
             var index = JsonConvert.SerializeObject(assets);
             File.WriteAllText(indexPath, index);
         }
 
-        public MaterialFiles GetMaterial(MyMeshMaterial source)
+        public MaterialFiles GetMaterial(MyMeshMaterial source, string skin, Vector3 color)
         {
-            try
+            log.WriteLine($"Material Get Name={source.Name} Skin={skin} Color={color}");
+
+            foreach (var pair in source.Textures)
+                log.WriteLine($"texture Type={pair.Key} Value={pair.Value}");
+
+            source.Textures.TryGetValue("ColorMetalTexture", out var colorMetal);
+            source.Textures.TryGetValue("AddMapsTexture", out var addMaps);
+            source.Textures.TryGetValue("NormalGlossTexture", out var normalGloss);
+            source.Textures.TryGetValue("AlphamaskTexture", out var alphaMask);
+
+            var identifier = new AssetModifierIdentifier(source.Name, skin);
+            if (modifiers.TryGetValue(identifier, out var modifier))
             {
-                return GetMaterialInternal(source);
+                log.WriteLine($"Modifier found");
+                if (modifier.ColorMetal != null)
+                    colorMetal = modifier.ColorMetal;
+                if (modifier.AddMaps != null)
+                    addMaps = modifier.AddMaps;
+                if (modifier.NormalGloss != null)
+                    normalGloss = modifier.NormalGloss;
+                if (modifier.AlphaMask != null)
+                    alphaMask = modifier.AlphaMask;
             }
-            catch
+
+            if (colorMetal == null)
+                throw new ArgumentNullException("ColorMetal Texture");
+            if (addMaps == null)
+                throw new ArgumentNullException("AddMaps Texture");
+            if (normalGloss == null)
+                throw new ArgumentNullException("NormalGloss Texture");
+
+            var colorIdentifier = new ColorTextureIdentifier(colorMetal, addMaps, alphaMask, color);
+            if (!colorTextures.TryGetValue(colorIdentifier, out var colorTexture))
             {
-                return null;
+                colorTexture = NextIdentifier();
+                colorToExport.Add((colorIdentifier, colorTexture));
+                colorTextures.Add(colorIdentifier, colorTexture);
             }
-        }
 
-        private MaterialFiles GetMaterialInternal(MyMeshMaterial source)
-        {
-            if (!materials.TryGetValue(source.Name, out var asset))
-                return null;
+            var physicalIdentifier = new PhysicalTextureIdentifier(colorMetal, normalGloss);
+            if (!physicalTextures.TryGetValue(physicalIdentifier, out var physicalTexture))
+            {
+                var name = NextIdentifier();
+                physicalTexture = new PhysicalTextures
+                {
+                    Normal = name,
+                    RoughMetal = name,
+                };
+                physicalToExport.Add((physicalIdentifier, name));
+                physicalTextures.Add(physicalIdentifier, physicalTexture);
+            }
 
-            var colorPath = Path.Combine(libraryPath, "Textures", asset.Color);
-            var normalPath = Path.Combine(libraryPath, "Textures", asset.Normal);
-            var roughMetalPath = Path.Combine(libraryPath, "Textures", asset.RoughMetal);
-
-            if (!HashExport(colorPath, normalPath, roughMetalPath).SequenceEqual(asset.ExportHash))
-                return null;
-
-            var colorMetalAsset = source.Textures.Get("ColorMetalTexture");
-            var normalGlossAsset = source.Textures.Get("NormalGlossTexture");
-            //var addMapsAsset = source.Textures.Get("AddMapsTexture");
-            var alphaMaskAsset = source.Textures.Get("AlphamaskTexture");
-
-            string colorMetalPath = null;
-            string normalGlossPath = null;
-            string alphaMaskPath = null;
-            if (!string.IsNullOrEmpty(colorMetalAsset))
-                colorMetalPath = Path.Combine(contentPath, colorMetalAsset);
-            if (!string.IsNullOrEmpty(normalGlossAsset))
-                normalGlossPath = Path.Combine(contentPath, normalGlossAsset);
-            if (!string.IsNullOrEmpty(alphaMaskAsset))
-                alphaMaskPath = Path.Combine(contentPath, alphaMaskAsset);
-
-            if (!HashSource(colorMetalPath, normalGlossPath, alphaMaskPath).SequenceEqual(asset.SourceHash))
-                return null;
+            var colorPath = Path.Combine(libraryPath, "Color", colorTexture + ".png");
+            var normalPath = Path.Combine(libraryPath, "Normal", physicalTexture.Normal + ".png");
+            var roughMetalPath = Path.Combine(libraryPath, "Physical", physicalTexture.RoughMetal + ".png");
 
             return new MaterialFiles
             {
-                Name = source.Name,
                 ColorPath = colorPath,
                 NormalPath = normalPath,
                 RoughMetalPath = roughMetalPath,
             };
         }
 
-        public MaterialFiles AddMaterial(MyMeshMaterial source, Material processed)
+        public void ExportMissing(TextureExporter exporter)
         {
-            if (materials.ContainsKey(source.Name))
-                throw new InvalidOperationException("Material has already been added");
+            var colorDir = Path.Combine(libraryPath, "Color");
+            if (!Directory.Exists(colorDir))
+                Directory.CreateDirectory(colorDir);
+            var normalDir = Path.Combine(libraryPath, "Normal");
+            if (!Directory.Exists(normalDir))
+                Directory.CreateDirectory(normalDir);
+            var roughMetalDir = Path.Combine(libraryPath, "Physical");
+            if (!Directory.Exists(roughMetalDir))
+                Directory.CreateDirectory(roughMetalDir);
 
-            var dirPath = Path.Combine(libraryPath, "Textures");
-            if (!Directory.Exists(dirPath))
-                Directory.CreateDirectory(dirPath);
-
-            var colorPath = Path.Combine(dirPath, processed.Name + "_color.png");
-            var normalPath = Path.Combine(dirPath, processed.Name + "_normal.png");
-            var roughMetalPath = Path.Combine(dirPath, processed.Name + "_pbr.png");
-            using (var file = File.OpenWrite(colorPath))
-                processed.Color.SaveAsPng(file);
-            using (var file = File.OpenWrite(normalPath))
-                processed.Normal.SaveAsPng(file);
-            using (var file = File.OpenWrite(roughMetalPath))
-                processed.RoughMetal.SaveAsPng(file);
-
-            var exportHash = HashExport(colorPath, normalPath, roughMetalPath);
-
-            var colorMetalAsset = source.Textures.Get("ColorMetalTexture");
-            var normalGlossAsset = source.Textures.Get("NormalGlossTexture");
-            //var addMapsAsset = source.Textures.Get("AddMapsTexture");
-            var alphaMaskAsset = source.Textures.Get("AlphamaskTexture");
-
-            string colorMetalPath = null;
-            string normalGlossPath = null;
-            string alphaMaskPath = null;
-            if (!string.IsNullOrEmpty(colorMetalAsset))
-                colorMetalPath = Path.Combine(contentPath, colorMetalAsset);
-            if (!string.IsNullOrEmpty(normalGlossAsset))
-                normalGlossPath = Path.Combine(contentPath, normalGlossAsset);
-            if (!string.IsNullOrEmpty(alphaMaskAsset))
-                alphaMaskPath = Path.Combine(contentPath, alphaMaskAsset);
-
-            var sourceHash = HashSource(colorMetalPath, normalGlossPath, alphaMaskPath);
-
-            var asset = new MaterialAsset
+            // Render color textures
+            Parallel.ForEach(colorToExport, t =>
             {
-                Name = processed.Name,
-                Color = processed.Name + "_color.png",
-                Normal = processed.Name + "_normal.png",
-                RoughMetal = processed.Name + "_pbr.png",
-                ExportHash = exportHash,
-                SourceHash = sourceHash,
-            };
+                //foreach (var t in colorToExport)
+                //{
+                var material = exporter.ProcessColor(t.Item1.colorMetal, t.Item1.addMaps, t.Item1.alphaMask, t.Item1.color);
+                var colorPath = Path.Combine(libraryPath, "Color", t.Item2 + ".png");
 
-            materials.Add(asset.Name, asset);
+                using (var file = File.OpenWrite(colorPath))
+                    material.Color.SaveAsPng(file);
+                //}
+            });
+            colorToExport.Clear();
 
-            return new MaterialFiles
+            // Render physical textures (normal, roughness, metalness)
+            // Parallelizing since texture loading is very slow
+            Parallel.ForEach(physicalToExport, t =>
             {
-                Name = source.Name,
-                ColorPath = colorPath,
-                NormalPath = normalPath,
-                RoughMetalPath = roughMetalPath,
-            };
+                //    foreach (var t in physicalToExport)
+                //{
+                var material = exporter.ProcessPhysical(t.Item1.colorMetal, t.Item1.normalGloss);
+                var normalPath = Path.Combine(libraryPath, "Normal", t.Item2 + ".png");
+                var roughMetalPath = Path.Combine(libraryPath, "Physical", t.Item2 + ".png");
+
+                using (var file = File.OpenWrite(normalPath))
+                    material.Normal.SaveAsPng(file);
+                using (var file = File.OpenWrite(roughMetalPath))
+                    material.RoughMetal.SaveAsPng(file);
+            });
+            //}
+            physicalToExport.Clear();
         }
 
-        private byte[] HashExport(string colorPath, string normalPath, string roughMetalPath)
+        private string NextIdentifier() => $"{current++:x8}";
+
+        private static Vector3 ConvertColor(float[] color) => new Vector3(color[0], color[1], color[2]);
+        private static float[] ConvertColor(Vector3 color) => new float[] { color.X, color.Y, color.Z };
+
+        private class AssetModifier
         {
-
-            using (var md5 = MD5.Create())
-            {
-                var nameBytes = Encoding.ASCII.GetBytes("color");
-                md5.TransformBlock(nameBytes, 0, nameBytes.Length, nameBytes, 0);
-                // TODO: Compute hash in a streaming way
-                var contentBytes = File.ReadAllBytes(colorPath);
-                md5.TransformBlock(contentBytes, 0, contentBytes.Length, contentBytes, 0);
-
-                nameBytes = Encoding.ASCII.GetBytes("normal");
-                md5.TransformBlock(nameBytes, 0, nameBytes.Length, nameBytes, 0);
-                contentBytes = File.ReadAllBytes(normalPath);
-                md5.TransformBlock(contentBytes, 0, contentBytes.Length, contentBytes, 0);
-
-                nameBytes = Encoding.ASCII.GetBytes("pbr");
-                md5.TransformBlock(nameBytes, 0, nameBytes.Length, nameBytes, 0);
-                contentBytes = File.ReadAllBytes(roughMetalPath);
-                md5.TransformFinalBlock(contentBytes, 0, contentBytes.Length);
-
-                return md5.Hash;
-            }
+            public string ColorMetal { get; set; }
+            public string NormalGloss { get; set; }
+            public string AddMaps { get; set; }
+            public string AlphaMask { get; set; }
         }
 
-        private byte[] HashSource(string colorMetalPath, string normalGlossPath, string alphaMaskPath)
+        private class PhysicalTextures
         {
-
-            using (var md5 = MD5.Create())
-            {
-                if (colorMetalPath != null)
-                {
-                    var nameBytes = Encoding.ASCII.GetBytes("color");
-                    md5.TransformBlock(nameBytes, 0, nameBytes.Length, nameBytes, 0);
-                    // TODO: Compute hash in a streaming way
-                    var contentBytes = File.ReadAllBytes(colorMetalPath);
-                    md5.TransformBlock(contentBytes, 0, contentBytes.Length, contentBytes, 0);
-                }
-                if (normalGlossPath != null)
-                {
-                    var nameBytes = Encoding.ASCII.GetBytes("normal");
-                    md5.TransformBlock(nameBytes, 0, nameBytes.Length, nameBytes, 0);
-                    var contentBytes = File.ReadAllBytes(normalGlossPath);
-                    md5.TransformBlock(contentBytes, 0, contentBytes.Length, contentBytes, 0);
-                }
-                if (alphaMaskPath != null)
-                {
-                    var nameBytes = Encoding.ASCII.GetBytes("alpha");
-                    md5.TransformBlock(nameBytes, 0, nameBytes.Length, nameBytes, 0);
-                    var contentBytes = File.ReadAllBytes(alphaMaskPath);
-                    md5.TransformBlock(contentBytes, 0, contentBytes.Length, contentBytes, 0);
-                }
-                var finalBytes = Encoding.ASCII.GetBytes("AssetLibrary");
-                md5.TransformFinalBlock(finalBytes, 0, finalBytes.Length);
-
-                return md5.Hash;
-            }
-        }
-
-        private class Assets
-        {
-            public IList<MaterialAsset> Materials { get; set; }
-        }
-
-        private class MaterialAsset
-        {
-            public string Name { get; set; }
-            public string Color { get; set; }
             public string Normal { get; set; }
             public string RoughMetal { get; set; }
-            public byte[] SourceHash { get; set; }
-            public byte[] ExportHash { get; set; }
+        }
+
+        private class AssetModifierIdentifier : IEquatable<AssetModifierIdentifier>
+        {
+            public readonly string asset;
+            public readonly string skin;
+
+            public AssetModifierIdentifier(string asset, string skin)
+            {
+                this.asset = asset;
+                this.skin = skin;
+            }
+
+            // https://stackoverflow.com/a/263416
+            public override int GetHashCode()
+            {
+                unchecked
+                {
+                    int hash = (int)2166136261;
+                    hash = (hash * 16777619) ^ asset.GetHashCode();
+                    return (hash * 16777619) ^ skin.GetHashCode();
+                }
+            }
+
+            public bool Equals(AssetModifierIdentifier other)
+            {
+                return asset == other.asset
+                    && skin == other.skin;
+            }
+        }
+
+        private class ColorTextureIdentifier : IEquatable<ColorTextureIdentifier>
+        {
+            public readonly string colorMetal;
+            public readonly string addMaps;
+            public readonly string alphaMask;
+            public readonly Vector3 color;
+
+            public ColorTextureIdentifier(string colorMetal, string addMaps, string alphaMask, Vector3 color)
+            {
+                this.colorMetal = colorMetal;
+                this.addMaps = addMaps;
+                this.alphaMask = alphaMask;
+                this.color = color;
+            }
+
+            // https://stackoverflow.com/a/263416
+            public override int GetHashCode()
+            {
+                unchecked
+                {
+                    int hash = (int)2166136261;
+                    hash = (hash * 16777619) ^ colorMetal.GetHashCode();
+                    hash = (hash * 16777619) ^ addMaps.GetHashCode();
+                    hash = (hash * 16777619) ^ alphaMask?.GetHashCode() ?? 0x484EACB5;
+                    return (hash * 16777619) ^ color.GetHashCode();
+                }
+            }
+
+            public bool Equals(ColorTextureIdentifier other)
+            {
+                return colorMetal == other.colorMetal
+                    && addMaps == other.addMaps
+                    && alphaMask == other.alphaMask
+                    && color == other.color;
+            }
+        }
+
+        private class PhysicalTextureIdentifier : IEquatable<PhysicalTextureIdentifier>
+        {
+            public readonly string colorMetal;
+            public readonly string normalGloss;
+
+            public PhysicalTextureIdentifier(string colorMetal, string normalGloss)
+            {
+                this.colorMetal = colorMetal;
+                this.normalGloss = normalGloss;
+            }
+
+            // https://stackoverflow.com/a/263416
+            public override int GetHashCode()
+            {
+                unchecked
+                {
+                    int hash = (int)2166136261;
+                    hash = (hash * 16777619) ^ colorMetal.GetHashCode();
+                    return (hash * 16777619) ^ normalGloss.GetHashCode();
+                }
+            }
+
+            public bool Equals(PhysicalTextureIdentifier other)
+            {
+                return colorMetal == other.colorMetal
+                    && normalGloss == other.normalGloss;
+            }
+        }
+
+        private class AssetsIndex
+        {
+            public IList<AssetsColor> Color { get; set; }
+            public IList<AssetsPhysics> Physical { get; set; }
+            public uint Current { get; set; }
+        }
+
+        private class AssetsColor
+        {
+            public string ColorMetal { get; set; }
+            public string AddMaps { get; set; }
+            public string AlphaMask { get; set; }
+            public float[] Color { get; set; }
+            public string Ident { get; set; }
+        }
+
+        private class AssetsPhysics
+        {
+            public string ColorMetal { get; set; }
+            public string NormalGloss { get; set; }
+            public string NormalIdent { get; set; }
+            public string RoughMetalIdent { get; set; }
         }
     }
 }
