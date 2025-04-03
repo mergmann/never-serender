@@ -2,6 +2,7 @@
 using Sandbox.Game.World;
 using System;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using VRage.Game;
 using VRage.Game.Components;
 using VRage.Input;
@@ -13,26 +14,20 @@ namespace NeverSerender
     // ReSharper disable once UnusedType.Global
     public class NeverSerenderPlugin : IPlugin, IDisposable
     {
+        private const string LogPath = "Z:/home/mattisb/spacemodel/neverserender.txt";
+        private const string OutPath = "Z:/home/mattisb/spacemodel/model.semodel";
+
         public const string Name = "NeverSerender";
+
         public static NeverSerenderPlugin Instance { get; private set; }
 
-        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        [MethodImpl(MethodImplOptions.NoInlining)]
         public void Init(object gameInstance)
         {
-            AppDomain.CurrentDomain.AssemblyResolve += (s, e) =>
-            {
-                var name = new AssemblyName(e.Name);
-                MyLog.Default.WriteLineAndConsole($"Assembly load: {e.Name} from {e.RequestingAssembly}");
-                if (name.Name == "System.Numerics.Vectors" && name.Version == new Version(4, 1, 3, 0))
-                {
-                    MyLog.Default.WriteLineAndConsole($"Intercepting assembly load: {name}");
-                    return Util.SystemNumericsVector;
-                }
-                return null;
-            };
-            Instance = this;
             Harmony harmony = new Harmony(Name);
             harmony.PatchAll(Assembly.GetExecutingAssembly());
+
+            Instance = this;
             MyLog.Default.WriteLineAndConsole("NeverSerender Plugin initialized");
         }
 
@@ -49,11 +44,17 @@ namespace NeverSerender
         [MySessionComponentDescriptor(MyUpdateOrder.AfterSimulation)]
         public class NeverSerenderPluginSession : MySessionComponentBase
         {
-            public static NeverSerenderPluginSession Instance;
+            private static readonly ExportSettings Settings = new ExportSettings
+            {
+                LogPath = LogPath,
+                OutPath = OutPath,
+                AutoFlush = true,
+            };
+
+            private Capture capture;
 
             public override void Init(MyObjectBuilder_SessionComponent sessionComponent)
             {
-                Instance = this;
                 MyLog.Default.WriteLineAndConsole("NeverSerender Session initialized");
             }
 
@@ -61,8 +62,29 @@ namespace NeverSerender
             {
                 if (MySession.Static == null || !MySession.Static.Ready)
                     return;
-                if (MyInput.Static.IsKeyPress(MyKeys.R))
-                    Capture.CaptureGame("Z:/home/mattisb/neverserender.txt");
+
+                capture?.Step(1.0f / 60.0f);
+
+                if (!MyInput.Static.IsNewKeyPressed(MyKeys.R)) return;
+
+                if (MyInput.Static.IsAnyCtrlKeyPressed())
+                {
+                    var captureOnce = new Capture(Settings);
+                    captureOnce.Step(null);
+                    captureOnce.Finish();
+                }
+
+                if (!MyInput.Static.IsAnyShiftKeyPressed()) return;
+                if (capture == null)
+                {
+                    capture = new Capture(Settings);
+                    capture.Step(null);
+                }
+                else
+                {
+                    capture.Finish();
+                    capture = null;
+                }
             }
         }
 

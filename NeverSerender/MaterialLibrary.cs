@@ -1,0 +1,86 @@
+using System;
+using System.Collections.Generic;
+using Sandbox.Definitions;
+using VRageMath;
+using VRageRender.Messages;
+using VRageRender.Models;
+
+namespace NeverSerender
+{
+    public class MaterialLibrary
+    {
+        private readonly Dictionary<string, Dictionary<string, Textures>> modifiers;
+        private readonly Dictionary<string, Vector3> colorOverrides;
+
+        public MaterialLibrary()
+        {
+            modifiers = new Dictionary<string, Dictionary<string, Textures>>();
+            colorOverrides = new Dictionary<string, Vector3>();
+            
+            foreach (var modifier in MyDefinitionManager.Static.GetAssetModifierDefinitions())
+            {
+                if (modifier.DefaultColor.HasValue)
+                    colorOverrides.Add(modifier.Id.SubtypeName, modifier.DefaultColor.Value.ColorToHSVDX11());
+                
+                var skinModifiers = new Dictionary<string, Textures>();
+                foreach (var texture in modifier.Textures)
+                {
+                    if (!skinModifiers.TryGetValue(texture.Location, out var value))
+                    {
+                        value = new Textures();
+                        skinModifiers.Add(texture.Location, value);
+                    }
+
+                    switch (texture.Type)
+                    {
+                        case MyTextureType.ColorMetal: value.ColorMetal = texture.Filepath; break;
+                        case MyTextureType.NormalGloss: value.NormalGloss = texture.Filepath; break;
+                        case MyTextureType.Extensions: value.AddMaps = texture.Filepath; break;
+                        case MyTextureType.Alphamask: value.AlphaMask = texture.Filepath; break;
+                        case MyTextureType.Unspecified: break;
+                        default:
+                            throw new ArgumentOutOfRangeException();
+                    }
+                }
+
+                modifiers.Add(modifier.Id.SubtypeName, skinModifiers);
+            }
+        }
+
+        public Textures GetModifier(string skin, string material)
+        {
+            Textures modifier = null;
+            modifiers.TryGetValue(skin, out var skinModifiers);
+            skinModifiers?.TryGetValue(material, out modifier);
+            return modifier;
+        }
+        
+        public Vector3? GetColorOverride(string skin) =>
+            colorOverrides.TryGetValue(skin, out var color) ? color : (Vector3?)null;
+
+        public static Textures GetTextures(MyMeshMaterial source)
+        {
+            if (source.Textures == null)
+                return new Textures();
+
+            source.Textures.TryGetValue("ColorMetalTexture", out var colorMetal);
+            source.Textures.TryGetValue("AddMapsTexture", out var addMaps);
+            source.Textures.TryGetValue("NormalGlossTexture", out var normalGloss);
+            source.Textures.TryGetValue("AlphamaskTexture", out var alphaMask);
+
+            return new Textures
+            {
+                ColorMetal = colorMetal,
+                AddMaps = addMaps,
+                NormalGloss = normalGloss,
+                AlphaMask = alphaMask,
+            };
+        }
+
+        public class Modifier
+        {
+            public Textures Textures { get; set; }
+            public Vector3? Color { get; set; }
+        }
+    }
+}

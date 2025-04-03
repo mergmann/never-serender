@@ -1,63 +1,57 @@
 ﻿using System;
-using System.Reflection;
-using VRage.Utils;
+using System.Text;
+using Sandbox.Definitions;
+using Sandbox.Game.Entities;
+using Sandbox.Game.Entities.Cube;
 using VRageMath;
 
 namespace NeverSerender
 {
     public static class Util
     {
-        public static readonly Assembly SystemNumericsVector;
-        public static readonly Assembly SystemNumerics;
-        public static readonly Type Vector2;
-        //public static readonly ConstructorInfo Vector2C = null;
-        public static readonly ConstructorInfo Vector2C;
-        public static readonly Type Vector3;
-        //public static readonly ConstructorInfo Vector3C = null;
-        public static readonly ConstructorInfo Vector3C;
-        public static readonly Type Matrix4x4;
-        //public static readonly ConstructorInfo Matrix4x4C = null;
-        public static readonly ConstructorInfo Matrix4x4C;
-        //public static readonly PropertyInfo Matrix4x4Identity = Matrix4x4.GetProperty("Identity");
-
-        public static object ConvertVector(Vector2 value)
+        public static string VectorToString(VRageMath.Vector4 vector)
         {
-            return Vector2C.Invoke(new object[] { value.X, value.Y });
+            return $"[{vector.X}, {vector.Y}, {vector.Z}, {vector.W}]";
         }
 
-        public static object ConvertVector(Vector3 value)
+        public static string MatrixToString(VRageMath.Matrix m)
         {
-            return Vector3C.Invoke(new object[] { value.X, value.Y, value.Z });
-        }
+            var builder = new StringBuilder();
+            builder.Append("[\n");
 
-        public static object ConvertMatrix(Matrix value)
-        {
-            return Matrix4x4C.Invoke(
-                new object[] {
-                    value.M11, value.M12, value.M13, value.M14,
-                    value.M21, value.M22, value.M23, value.M24,
-                    value.M31, value.M32, value.M33, value.M34,
-                    value.M41, value.M42, value.M43, value.M44
-                }
-            );
-        }
-
-        static Util()
-        {
-            SystemNumericsVector = Assembly.LoadFrom("System.Numerics.Vectors_old.dll");
-            SystemNumerics = Assembly.Load("System.Numerics");
-            Vector2 = SystemNumerics.GetType("System.Numerics.Vector2");
-            Vector2C = Vector2.GetConstructor(new Type[] { typeof(float), typeof(float) });
-            Vector3 = SystemNumerics.GetType("System.Numerics.Vector3");
-            Vector3C = Vector3.GetConstructor(new Type[] { typeof(float), typeof(float), typeof(float) });
-            Matrix4x4 = SystemNumerics.GetType("System.Numerics.Matrix4x4");
-            Matrix4x4C = Matrix4x4.GetConstructor(new Type[]
+            for (var i = 0; i < 4; i++)
             {
-                typeof(float), typeof(float), typeof(float), typeof(float),
-                typeof(float), typeof(float), typeof(float), typeof(float),
-                typeof(float), typeof(float), typeof(float), typeof(float),
-                typeof(float), typeof(float), typeof(float), typeof(float)
-            });
+                var row = m.GetRow(i);
+                builder.Append("    " + VectorToString(row) + ",\n");
+            }
+
+            builder.Append("]");
+            return builder.ToString();
+        }
+        
+        public static string GetActiveBlockModel(MySlimBlock block, out MatrixI orientation)
+        {
+            var buildLevelRatio = block.BuildLevelRatio;
+            orientation = new MatrixI(block.Orientation);
+
+            if (!(buildLevelRatio < 1.0)
+                || block.BlockDefinition.BuildProgressModels == null
+                || block.BlockDefinition.BuildProgressModels.Length == 0)
+                return block.FatBlock == null ? block.BlockDefinition.Model : block.FatBlock.Model.AssetName;
+
+            foreach (var model in block.BlockDefinition.BuildProgressModels)
+            {
+                if (!(model.BuildRatioUpperBound >= buildLevelRatio)) continue;
+
+                if (model.RandomOrientation)
+                    orientation = MyCubeGridDefinitions.AllPossible90rotations[
+                        Math.Abs(block.Position.GetHashCode()) %
+                        MyCubeGridDefinitions.AllPossible90rotations.Length
+                    ];
+                return model.File;
+            }
+
+            return block.FatBlock == null ? block.BlockDefinition.Model : block.FatBlock.Model.AssetName;
         }
     }
 }
