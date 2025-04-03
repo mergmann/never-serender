@@ -10,16 +10,21 @@ namespace NeverSerender
 {
     public class EntityChangeTracker : IDisposable
     {
-        private readonly MiniLog log;
-
         private readonly Dictionary<long, EntitySnapshot> changes = new Dictionary<long, EntitySnapshot>();
         private readonly Dictionary<long, MyEntity> entities = new Dictionary<long, MyEntity>();
         private readonly Dictionary<long, Matrix> localMatrices = new Dictionary<long, Matrix>();
+        private readonly MiniLog log;
         private readonly Dictionary<long, MatrixD> worldMatrices = new Dictionary<long, MatrixD>();
 
         public EntityChangeTracker(MiniLog log)
         {
             this.log = log;
+        }
+
+        public void Dispose()
+        {
+            foreach (var entity in entities.Values)
+                Unlink(entity);
         }
 
         public List<EntitySnapshot> Next()
@@ -126,12 +131,6 @@ namespace NeverSerender
             };
             changes[entityId] = entity;
             return entity;
-        }
-
-        public void Dispose()
-        {
-            foreach (var entity in entities.Values)
-                Unlink(entity);
         }
     }
 }

@@ -14,14 +14,37 @@ namespace NeverSerender.Output
             BaseStream = stream;
         }
 
-        public void WriteRaw(byte[] bytes) => BaseStream.Write(bytes, 0, bytes.Length);
-        public void WriteRaw(string value) => WriteRaw(Encoding.UTF8.GetBytes(value));
+        public Stream BaseStream { get; }
 
-        public void Write(bool value) => BaseStream.WriteByte((byte)(value ? 1 : 0));
-        public void Write(byte value) => BaseStream.WriteByte(value);
-        public void Write(sbyte value) => BaseStream.WriteByte((byte)value);
+        public void WriteRaw(byte[] bytes)
+        {
+            BaseStream.Write(bytes, 0, bytes.Length);
+        }
 
-        public void Write(short value) => Write((ushort)value);
+        public void WriteRaw(string value)
+        {
+            WriteRaw(Encoding.UTF8.GetBytes(value));
+        }
+
+        public void Write(bool value)
+        {
+            BaseStream.WriteByte((byte)(value ? 1 : 0));
+        }
+
+        public void Write(byte value)
+        {
+            BaseStream.WriteByte(value);
+        }
+
+        public void Write(sbyte value)
+        {
+            BaseStream.WriteByte((byte)value);
+        }
+
+        public void Write(short value)
+        {
+            Write((ushort)value);
+        }
 
         public void Write(ushort value)
         {
@@ -30,7 +53,10 @@ namespace NeverSerender.Output
             BaseStream.Write(buffer, 0, 2);
         }
 
-        public void Write(int value) => Write((uint)value);
+        public void Write(int value)
+        {
+            Write((uint)value);
+        }
 
         public void Write(uint value)
         {
@@ -41,7 +67,10 @@ namespace NeverSerender.Output
             BaseStream.Write(buffer, 0, 4);
         }
 
-        public void Write(long value) => Write((ulong)value);
+        public void Write(long value)
+        {
+            Write((ulong)value);
+        }
 
         public void Write(ulong value)
         {
@@ -99,7 +128,7 @@ namespace NeverSerender.Output
             Write(vector.Y);
             Write(vector.Z);
         }
-        
+
         public void Write(Vector3UByte vector)
         {
             Write(vector.X);
@@ -163,8 +192,8 @@ namespace NeverSerender.Output
         public void Write(MatrixI matrix)
         {
             var value = (int)matrix.Forward;
-            value += (int)(matrix.Up) * 6;
-            value += (int)(matrix.Right) * 36;
+            value += (int)matrix.Up * 6;
+            value += (int)matrix.Right * 36;
             Write((byte)value);
         }
 
@@ -263,7 +292,7 @@ namespace NeverSerender.Output
             Write((ushort)Property.Delta);
             Write(value);
         }
-        
+
         public void PropertyCone(Vector2 cone)
         {
             Write((ushort)Property.Cone);
@@ -275,9 +304,11 @@ namespace NeverSerender.Output
             Write((ushort)Property.Scale);
             Write(scale);
         }
-        
-        public void PropertyRemove() =>
+
+        public void PropertyRemove()
+        {
             Write((ushort)Property.Remove);
+        }
 
         public void PropertyPreview(bool value)
         {
@@ -290,15 +321,17 @@ namespace NeverSerender.Output
             Write((ushort)Property.Parent);
             Write(value);
         }
-        
+
         public void PropertyShow(bool value)
         {
             Write((ushort)Property.Show);
             Write(value);
         }
 
-        public void PropertyEnd() =>
+        public void PropertyEnd()
+        {
             Write((ushort)Property.EndHeader);
+        }
 
 
         public void Event(Event @event, Action<BinWriter> action = null)
@@ -317,7 +350,7 @@ namespace NeverSerender.Output
             else if (BaseStream.CanSeek)
             {
                 var sizePos = BaseStream.Position;
-                Write((uint)0xFFFF_FFFF); // Placeholder
+                Write(0xFFFF_FFFF); // Placeholder
                 action(this);
                 var endPos = BaseStream.Position;
                 var size = endPos - sizePos - 4;
@@ -338,7 +371,5 @@ namespace NeverSerender.Output
                 }
             }
         }
-
-        public Stream BaseStream { get; }
     }
 }

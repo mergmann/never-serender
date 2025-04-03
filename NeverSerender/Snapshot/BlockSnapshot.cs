@@ -19,7 +19,7 @@ namespace NeverSerender.Snapshot
             Orientation = orientation;
             Definition = block.BlockDefinition;
         }
-        
+
         public long? EntityId { get; private set; }
         public string Model { get; private set; }
         public string Skin { get; private set; }

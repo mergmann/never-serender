@@ -24,6 +24,6 @@ namespace NeverSerender.Output
         Remove = 0x1200,
         Preview = 0x1301,
         Parent = 0x1408,
-        Show = 0x1501,
+        Show = 0x1501
     }
 }

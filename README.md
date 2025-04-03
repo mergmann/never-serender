@@ -15,7 +15,8 @@
 3. Run `ReplaceGuidsAndRename.py`, enter the name of your plugin project in `CapitalizedWords` format
 4. Edit `Edit-and-run-before-opening-solution.bat` to match your local paths, then run it
 5. Open the solution in Visual Studio or Rider
-6. Make a test build, it should deploy the resulting files to their respective target folders (see them in the build log) 
+6. Make a test build, it should deploy the resulting files to their respective target folders (see them in the build
+   log)
 7. Test that the empty plugin can be enabled in Plugin Loader
 8. Delete the `ReplaceGuidsAndRename.py` and the working copy folder (not needed anymore)
 9. Replace the contents of this file with the description of your plugin
@@ -29,9 +30,9 @@
 - A debug build defines `DEBUG`, so you can add conditional code in `#if DEBUG` blocks.
 - While debugging a specific target unload the other two. It prevents the IDE to be confused.
 - If breakpoints do not "stick" or do not work, then make sure that:
-  - Other projects are unloaded, only the debugged one and Shared are loaded.
-  - Debugger is attached to the running process.
-  - You are debugging the code which is running (no code changes made since the build).
+    - Other projects are unloaded, only the debugged one and Shared are loaded.
+    - Debugger is attached to the running process.
+    - You are debugging the code which is running (no code changes made since the build).
 
 ### Troubleshooting
 

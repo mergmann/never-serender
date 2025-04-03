@@ -1,123 +1,185 @@
-﻿using Sandbox.Game.Entities;
-using SharpGLTF.Scenes;
-using System;
+﻿using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
+using System.Threading;
+using NeverSerender.Output;
+using NeverSerender.Snapshot;
+using Sandbox.Game.Entities;
+using Sandbox.Game.World;
 using VRage.Utils;
 
 namespace NeverSerender
 {
     public class Capture
     {
+        private readonly Exporter exporter;
 
-        public static void CaptureGame(string logPath)
+        private readonly BlockingCollection<ChangeSnapshot> exportQueue = new BlockingCollection<ChangeSnapshot>();
+        private readonly Stream logFile;
+        private readonly MiniLog mainLog;
+        private readonly Stream outFile;
+        private readonly ExportSettings settings;
+        private readonly MiniLog threadLog;
+
+        private readonly EntityChangeTracker trackedEntities;
+        private readonly EntityChangeTracker trackedEntitiesDelayed;
+        private readonly Dictionary<long, GridChangeTracker> trackedGrids = new Dictionary<long, GridChangeTracker>();
+        private readonly SpaceWriter writer;
+
+        public Capture(ExportSettings settings)
         {
-            string outputPath = "Z:/home/mattisb/semodel/model.gltf";
-            string libraryPath = "Z:/home/mattisb/setex/";
-            string contentPath = "Z:/home/mattisb/steamapps/common/SpaceEngineers/Content/";
+            this.settings = settings;
 
-            MyLog.Default.WriteLineAndConsole("NeverSerender Capture");
-            if (File.Exists(logPath))
-                File.Delete(logPath);
+            MyLog.Default.WriteLineAndConsole("NeverSerender Capture starting");
 
-            using (var file = File.OpenWrite(logPath))
+            logFile = File.OpenWrite(settings.LogPath);
+            logFile.SetLength(0);
+
+            var rootLog = new MiniLog(new StreamWriter(logFile), settings.AutoFlush);
+            mainLog = rootLog.Named("Capture");
+            threadLog = mainLog.Named("Thread");
+
+            outFile = new BufferedStream(File.OpenWrite(settings.OutPath));
+            outFile.SetLength(0);
+
+            writer = new SpaceWriter(outFile, mainLog.Named("SpaceWriter"));
+            writer.Header(MySession.Static.Name, MySession.Static.LocalCharacter.Name);
+
+            exporter = new Exporter(mainLog.Named("Exporter"), writer);
+
+            trackedEntities = new EntityChangeTracker(mainLog.Named("Entities"));
+            trackedEntitiesDelayed = new EntityChangeTracker(mainLog.Named("EntitiesDelayed"));
+
+            new Thread(ExportThread).Start();
+        }
+
+        private void ExportThread()
+        {
+            try
             {
-                var log = new MiniLog(new StreamWriter(file));
-                var assetLibrary = AssetLibrary.OpenOrNew(libraryPath, log);
+                threadLog.WriteLine("Export thread started");
 
-                var textureExporter = new TextureExporter(contentPath, log);
-                var exporter = new Exporter(log, assetLibrary, textureExporter);
-                try
+                while (!exportQueue.IsCompleted)
                 {
-                    foreach (var entity in MyEntities.GetEntities())
+                    ChangeSnapshot snapshot;
+                    try
                     {
-                        log.WriteLine($"Prepare Entity DebugName={entity.DebugName} DisplayNameText={entity.DisplayNameText}");
-                        if (entity is MyCubeGrid grid)
-                        {
-                            log.WriteLine($"Prepare Grid BlocksCount={grid.BlocksCount}");
-                            foreach (var cell in grid.RenderData.Cells)
-                            {
-                                try
-                                {
-                                    exporter.PrepareCell(cell.Value);
-                                }
-                                catch (Exception ex)
-                                {
-                                    log.WriteLine($"Prepare Cell Error={ex}");
-                                }
-                            }
-                            foreach (var block in grid.GetBlocks())
-                            {
-                                try
-                                {
-                                    if (block.FatBlock != null)
-                                        exporter.PrepareBlock(block.FatBlock);
-                                }
-                                catch (Exception ex)
-                                {
-                                    log.WriteLine($"Prepare Block Error={ex}");
-                                }
-                            }
-                        }
+                        snapshot = exportQueue.Take();
+                    }
+                    catch (InvalidOperationException)
+                    {
+                        threadLog.WriteLine("Export thread stopped");
+                        break;
                     }
 
-                    log.WriteLine("\n---- Preparation done ----");
-                    log.WriteLine("Converting textures...");
-                    assetLibrary.ExportMissing(textureExporter);
-                    log.WriteLine("Exporting scene...\n");
-
-                    var gltfScene = new SceneBuilder("Space Engineers Solar System");
-                    foreach (var entity in MyEntities.GetEntities())
+                    try
                     {
-                        log.WriteLine($"Entity DebugName={entity.DebugName} DisplayNameText={entity.DisplayNameText}");
-                        if (entity is MyCubeGrid grid)
-                        {
-                            log.WriteLine($"Grid BlocksCount={grid.BlocksCount}");
-                            var gltfNode = new NodeBuilder($"Grid {grid.Name}")
-                            {
-                                LocalMatrix = Util2.ConvertMatrix(grid.WorldMatrix)
-                            };
-                            foreach (var cell in grid.RenderData.Cells)
-                            {
-                                try
-                                {
-                                    exporter.ExportCell(cell.Value, gltfScene, gltfNode);
-                                }
-                                catch (Exception ex)
-                                {
-                                    log.WriteLine($"Cell Error={ex}");
-                                }
-                            }
-                            foreach (var block in grid.GetBlocks())
-                            {
-                                try
-                                {
-                                    if (block.FatBlock != null)
-                                        exporter.ExportBlock(block.FatBlock, gltfScene, gltfNode);
-                                }
-                                catch (Exception ex)
-                                {
-                                    log.WriteLine($"Block Error={ex}");
-                                }
-                            }
-                            gltfScene.AddNode(gltfNode);
-                        }
+                        ProcessSnapshot(snapshot);
                     }
+                    catch (Exception ex)
+                    {
+                        threadLog.WriteLine($"Error processing snapshot: {ex}");
+                    }
+                }
 
-                    log.WriteLine("Creating model");
-                    var gltfModel = gltfScene.ToGltf2();
-                    log.WriteLine("Saving model");
-                    gltfModel.SaveGLTF(outputPath);
-                    log.WriteLine("Done");
-                }
-                catch (Exception ex)
-                {
-                    log.WriteLine($"Error {ex}");
-                }
-                finally
-                {
-                    assetLibrary.Save();
-                }
+                threadLog.WriteLine("Export thread finished");
+
+                writer.End();
             }
+            finally
+            {
+                exportQueue.CompleteAdding();
+                exportQueue.Dispose();
+
+                threadLog.WriteLine("Unloading");
+                exporter.Dispose();
+
+                threadLog.WriteLine("Export thread stopped");
+                threadLog.Flush();
+
+                logFile.Dispose();
+                outFile.Flush();
+                outFile.Dispose();
+            }
+        }
+
+        private void ProcessSnapshot(ChangeSnapshot snapshot)
+        {
+            threadLog.WriteLine($"Processing snapshot Advance={snapshot.Advance}");
+
+            if (snapshot.Advance.HasValue)
+                writer.Advance(snapshot.Advance.Value);
+
+            threadLog.WriteLine($"Modify {snapshot.Entities.Count} entities");
+            foreach (var entity in snapshot.Entities)
+                exporter.ExportEntity(entity);
+
+            threadLog.WriteLine($"Modify {snapshot.Grids.Count} grids");
+            foreach (var grid in snapshot.Grids)
+                exporter.ExportGrid(grid);
+
+            threadLog.WriteLine($"Modify {snapshot.EntitiesDelayed.Count} entities (delayed)");
+            foreach (var entity in snapshot.EntitiesDelayed)
+                exporter.ExportEntity(entity);
+
+            threadLog.WriteLine($"Modify {snapshot.Lights.Count} lights");
+            foreach (var light in snapshot.Lights)
+                exporter.ExportLight(light);
+        }
+
+        public void Step(float? advance)
+        {
+            mainLog.WriteLine("Step\n");
+            mainLog.Flush();
+
+            var grids = new List<GridSnapshot>();
+
+            foreach (var entity in MyEntities.GetEntities())
+            {
+                // mainLog.WriteLine(
+                //     $"Entity Name={entity.Name} DisplayName={entity.DisplayName} IsPreview={entity.IsPreview}");
+
+                trackedEntities.Add(entity);
+
+                if (!(entity is MyCubeGrid grid)) continue;
+
+                // mainLog.WriteLine(
+                //     $"Grid EntityId={grid.EntityId} DisplayName={grid.DisplayName} BlocksCount={grid.BlocksCount}");
+
+                if (!trackedGrids.TryGetValue(grid.EntityId, out var tracker))
+                {
+                    tracker = new GridChangeTracker(trackedEntitiesDelayed, grid);
+                    trackedGrids.Add(grid.EntityId, tracker);
+                }
+
+                var gridChanges = tracker.Next();
+                if (gridChanges.Blocks.Count > 0 || gridChanges.RemovedBlocks.Count > 0)
+                    grids.Add(gridChanges);
+            }
+
+            var lights = exporter.GetLights();
+
+            mainLog.WriteLine("Done");
+
+            var changes = new ChangeSnapshot
+            {
+                Advance = advance,
+                Entities = trackedEntities.Next(),
+                EntitiesDelayed = trackedEntitiesDelayed.Next(),
+                Grids = grids,
+                Lights = lights
+            };
+            exportQueue.Add(changes);
+        }
+
+        public void Finish()
+        {
+            exportQueue.CompleteAdding();
+            trackedEntities.Dispose();
+            trackedEntitiesDelayed.Dispose();
+            trackedGrids.ForEach(g => g.Value.Dispose());
         }
     }
 }

@@ -9,6 +9,6 @@ namespace NeverSerender.Output
         Model = 0x0040,
         Entity = 0x0050,
         Grid = 0x0052,
-        Light = 0x0060,
+        Light = 0x0060
     }
 }

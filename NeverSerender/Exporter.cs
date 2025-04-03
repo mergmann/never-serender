@@ -1,210 +1,483 @@
-﻿using Sandbox.Game.Entities;
-using Sandbox.Game.Entities.Cube;
-using SharpGLTF.Geometry;
-using SharpGLTF.Geometry.VertexTypes;
-using SharpGLTF.Materials;
-using SharpGLTF.Scenes;
+﻿using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using HarmonyLib;
+using NeverSerender.Output;
+using NeverSerender.Snapshot;
+using Sandbox.Definitions;
+using VRage.Game.Entity;
 using VRage.Game.Models;
+using VRage.Import;
+using VRage.Render.Scene;
+using VRage.Render.Scene.Components;
 using VRageMath;
+using VRageRender.Import;
 using VRageRender.Models;
 
 namespace NeverSerender
 {
-    using GLTFMesh = MeshBuilder<VertexPositionNormal, VertexTexture1, VertexEmpty>;
-    using GLTFVertex = VertexBuilder<VertexPositionNormal, VertexTexture1, VertexEmpty>;
-
-    public class Exporter
+    public class Exporter : IDisposable
     {
+        private static readonly List<MyMeshDrawTechnique> SupportedDrawModes = new List<MyMeshDrawTechnique>
+        {
+            MyMeshDrawTechnique.MESH,
+            MyMeshDrawTechnique.DECAL,
+            MyMeshDrawTechnique.DECAL_CUTOUT,
+            MyMeshDrawTechnique.DECAL_NOPREMULT
+        };
+
+        private readonly Dictionary<string, MyModel> cubeModels = new Dictionary<string, MyModel>();
+
         private readonly MiniLog log;
+        private readonly MaterialLibrary materialLibrary = new MaterialLibrary();
 
-        private readonly AssetLibrary assetLibrary;
-        private readonly IDictionary<string, MyModel> models;
-        private readonly IDictionary<AssetIdentifier, MaterialFiles> materials;
-        private readonly IDictionary<AssetIdentifier, MaterialBuilder> gltfMaterials;
-        private readonly IDictionary<AssetIdentifier, GLTFMesh> gltfMeshes;
+        private readonly Dictionary<long, uint> trackedEntityIds = new Dictionary<long, uint>();
+        private readonly Dictionary<(uint, bool), uint> trackedLightIds = new Dictionary<(uint, bool), uint>();
 
-        public Exporter(MiniLog log, AssetLibrary assetLibrary, TextureExporter textureExporter)
+        private readonly Dictionary<uint, LightSnapshot> trackedLights = new Dictionary<uint, LightSnapshot>();
+
+        private readonly Dictionary<string, uint> trackedMaterialIds = new Dictionary<string, uint>();
+
+        private readonly Dictionary<uint, string[]> trackedModelMaterials = new Dictionary<uint, string[]>();
+        private readonly Dictionary<string, uint> trackedModels = new Dictionary<string, uint>();
+
+        private readonly Dictionary<(string, string), uint?>
+            trackedOverrides = new Dictionary<(string, string), uint?>();
+
+        private readonly Dictionary<string, uint> trackedTextureIds = new Dictionary<string, uint>();
+        private readonly SpaceWriter writer;
+        private uint trackedEntityId = 1;
+        private uint trackedLightId = 1;
+        private uint trackedMaterialId = 1;
+        private uint trackedModelId = 1;
+        private uint trackedTextureId = 1;
+
+        public Exporter(MiniLog log, SpaceWriter writer)
         {
             this.log = log;
-            this.assetLibrary = assetLibrary;
-            models = new Dictionary<string, MyModel>();
-            materials = new Dictionary<AssetIdentifier, MaterialFiles>();
-            gltfMaterials = new Dictionary<AssetIdentifier, MaterialBuilder>();
-            gltfMeshes = new Dictionary<AssetIdentifier, GLTFMesh>();
+            this.writer = writer;
         }
 
-        public void PrepareBlock(MyCubeBlock block)
+        public void Dispose()
         {
-            var slimBlock = block.SlimBlock;
-            log.WriteLine($"Prepare Block Name={block.DisplayNameText} Model={block.Model} Skin={slimBlock.SkinSubtypeId} Color={slimBlock.ColorMaskHSV}");
-            ExportModel(block.Model, slimBlock.SkinSubtypeId.String, slimBlock.ColorMaskHSV);
+            cubeModels.ForEach(m => m.Value.UnloadData());
         }
 
-        public void PrepareCell(MyCubeGridRenderCell cell)
+        public IList<LightSnapshot> GetLights()
         {
-            log.WriteLine($"Prepare Cell Name={cell.DebugName}");
-            foreach (var pair in cell.CubeParts)
-                PrepareCubePart(pair.Key);
-        }
+            var actors = Traverse.Create<MyIDTracker<MyActor>>().Field("m_dict")
+                .GetValue<Dictionary<uint, MyIDTracker<MyActor>>>();
 
-        public void PrepareCubePart(MyCubePart part)
-        {
-            log.WriteLine($"Prepare CubePart Model={part.Model.AssetName} Skin={part.SkinSubtypeId} Color={part.InstanceData.ColorMaskHSV}");
-            var color4 = part.InstanceData.ColorMaskHSV;
-            var color = new Vector3(color4.X, color4.Y, color4.Z);
-            PrepareModel(part.Model, part.SkinSubtypeId.String, color);
-        }
+            var lights = new List<LightSnapshot>();
+            var removedLights = new HashSet<uint>(trackedLights.Keys);
 
-        public void PrepareModel(string asset, string skin, Vector3 color)
-        {
-            if (!models.TryGetValue(asset, out var model))
-            {
-                model = new MyModel(asset)
+            foreach (var pair in actors)
+                try
                 {
-                    LoadUV = true,
-                };
-                model.LoadData();
-                models.Add(asset, model);
-            }
+                    var actor = Traverse.Create(pair.Value).Field("m_value").GetValue<MyActor>();
 
-            PrepareModel(model, skin, color);
-        }
+                    var lightComponent = actor?.GetComponent<MyLightComponent>();
+                    if (lightComponent == null)
+                        continue;
+                    var lightData = lightComponent.Data;
 
-        public void PrepareModel(MyModel model, string skin, Vector3 color)
-        {
-            log.WriteLine($"\nPrepare Model Name={model.AssetName} VertexCount={model.GetVerticesCount()} TriCount={model.GetTrianglesCount()}");
+                    // log.WriteLine($"Get Light Name={actor.DebugName} Position={lightData.Position} PointLightOn={lightData.PointLightOn} SpotLightOn={lightData.SpotLightOn} CastShadows={lightData.CastShadows}");
+                    if (!lightData.PointLightOn && !lightData.SpotLightOn) continue;
 
-            if (!model.HasUV)
-            {
-                model.LoadUV = true;
-                model.UnloadData();
-                model.LoadData();
-            }
+                    var matrix = MatrixD.CreateTranslation(new Vector3D(0.0, 0.0, -0.05)) * actor.WorldMatrix;
 
-            foreach (var mesh in model.GetMeshList())
-                PrepareMaterial(mesh.Material, skin, color);
-        }
+                    if (lightData.PointLightOn)
+                    {
+                        var snapshot = new LightSnapshot
+                        {
+                            Id = actor.ID,
+                            Matrix = matrix,
+                            Color = lightData.PointLight.Color,
+                            Intensity = lightData.PointIntensity * 10.0f
+                        };
+                        removedLights.Remove(AddLight(actor.ID, snapshot, lights, false));
+                    }
 
-        public void PrepareMaterial(MyMeshMaterial material, string skin, Vector3 color)
-        {
-            log.WriteLine($"Prepare Material Name={material.Name} Draw={material.DrawTechnique} GlassCW={material.GlassCW} GlassCCW={material.GlassCCW} GlassSmooth={material.GlassSmooth}");
-
-            var identifier = new AssetIdentifier(material.Name, skin, color);
-            if (materials.ContainsKey(identifier))
-                return;
-
-            var files = assetLibrary.GetMaterial(material, skin, color);
-            materials.Add(identifier, files);
-        }
-
-        public void ExportBlock(MyCubeBlock block, SceneBuilder gltfScene, NodeBuilder gltfParentNode)
-        {
-            var slimBlock = block.SlimBlock;
-            log.WriteLine($"Block Name={block.DisplayNameText} Model={block.Model} Skin={slimBlock.SkinSubtypeId} Color={slimBlock.ColorMaskHSV}");
-            var gltfNode = gltfParentNode.CreateNode(block.DisplayNameText);
-
-            block.GetLocalMatrix(out var matrix);
-            gltfNode.LocalMatrix = Util2.ConvertMatrix(matrix);
-            gltfScene.AddRigidMesh(ExportModel(block.Model, slimBlock.SkinSubtypeId.String, slimBlock.ColorMaskHSV), gltfNode);
-        }
-
-        public void ExportCell(MyCubeGridRenderCell cell, SceneBuilder gltfScene, NodeBuilder gltfParentNode)
-        {
-            log.WriteLine($"Cell Name={cell.DebugName}");
-            var gltfNode = gltfParentNode.CreateNode($"Cube {cell.DebugName}");
-            foreach (var pair in cell.CubeParts)
-                ExportCubePart(pair.Key, gltfScene, gltfNode);
-        }
-
-        public void ExportCubePart(MyCubePart part, SceneBuilder gltfScene, NodeBuilder gltfParentNode)
-        {
-            log.WriteLine($"CubePart Model={part.Model.AssetName} Skin={part.SkinSubtypeId} Color={part.InstanceData.ColorMaskHSV}");
-            var data = part.InstanceData;
-            var gltfNode = gltfParentNode.CreateNode($"CubePart Model {part.Model}");
-            gltfNode.LocalMatrix = Util2.ConvertMatrix(data.LocalMatrix);
-            var color4 = part.InstanceData.ColorMaskHSV;
-            var color = new Vector3(color4.X, color4.Y, color4.Z);
-            gltfScene.AddRigidMesh(ExportModel(part.Model, part.SkinSubtypeId.String, color), gltfNode);
-        }
-
-        public GLTFMesh ExportModel(string asset, string skin, Vector3 color)
-        {
-            if (!models.TryGetValue(asset, out var model))
-            {
-                model = new MyModel(asset)
+                    if (lightData.SpotLightOn)
+                    {
+                        var snapshot = new LightSnapshot
+                        {
+                            Id = actor.ID,
+                            Matrix = matrix,
+                            Color = lightData.SpotLight.Light.Color,
+                            Intensity = lightData.SpotIntensity,
+                            Cone = new Vector2(lightData.SpotLight.ApertureCos * 0.9f, lightData.SpotLight.ApertureCos)
+                        };
+                        removedLights.Remove(AddLight(actor.ID, snapshot, lights, true));
+                    }
+                }
+                catch (Exception ex)
                 {
-                    LoadUV = true,
-                };
-                model.LoadData();
-                models.Add(asset, model);
-            }
+                    log.WriteLine($"Get Light Error={ex}");
+                }
 
-            return ExportModel(model, skin, color);
+            lights.AddRange(removedLights.Select(id => new LightSnapshot { Remove = true, Id = id }));
+
+            return lights;
         }
 
-        public GLTFMesh ExportModel(MyModel model, string skin, Vector3 color)
+        private uint AddLight(uint actorId, LightSnapshot light, IList<LightSnapshot> lights, bool isSpot)
         {
-            log.WriteLine($"\nModel Name={model.AssetName} VertexCount={model.GetVerticesCount()} TriCount={model.GetTrianglesCount()}");
-            var identifier = new AssetIdentifier(model.AssetName, skin, color);
-            if (gltfMeshes.TryGetValue(identifier, out var gltfMesh))
-                return gltfMesh;
-
-            if (!model.HasUV)
+            if (trackedLightIds.TryGetValue((actorId, isSpot), out var id))
             {
-                model.LoadUV = true;
-                model.UnloadData();
-                model.LoadData();
+                if (trackedLights[id].Equals(light)) return id;
+            }
+            else
+            {
+                id = trackedLightId++;
+                trackedLightIds.Add((actorId, isSpot), id);
             }
 
-            gltfMesh = GLTFVertex.CreateCompatibleMesh(model.AssetName);
+            lights.Add(light);
+            trackedLights[id] = light;
+
+            return id;
+        }
+
+        public void ExportLight(LightSnapshot light)
+        {
+            var id = trackedLightIds[(light.Id, light.Cone.HasValue)];
+            if (light.Remove)
+                writer.RemoveLight(id);
+            else
+                writer.Light(id, light.Matrix, light.Color * light.Intensity, light.Cone);
+        }
+
+        public void ExportEntity(EntitySnapshot entity)
+        {
+            if (!trackedEntityIds.TryGetValue(entity.EntityId, out var id))
+            {
+                id = trackedEntityId++;
+                trackedEntityIds.Add(entity.EntityId, id);
+            }
+
+            uint? model = null;
+            if (entity.Model != null)
+                model = ProcessModel(entity.Model);
+
+            writer.Entity(id, entity, model);
+        }
+
+        public void ExportGrid(GridSnapshot grid)
+        {
+            // log.WriteLine($"Export Grid {grid.Name}");
+
+            var id = trackedEntityIds[grid.EntityId];
+
+            var blocks = grid.Blocks.Select(Block).ToList();
+            blocks.AddRange(grid.RemovedBlocks.Select(b => new BlockProperties
+            {
+                Remove = true,
+                Position = b
+            }));
+            writer.Grid(id, grid.Scale, blocks);
+        }
+
+        private BlockProperties Block(BlockSnapshot block)
+        {
+            // log.WriteLine($"Process Block {slimBlock.BlockDefinition.Id}");
+
+            var skin = block.Skin;
+            var colorOverride = materialLibrary.GetColorOverride(skin);
+
+            var color = colorOverride ?? block.Color;
+            var hue = (byte)MathHelper.Clamp(color.X * 255.0, 0.0, 255.0);
+            var sat = (byte)MathHelper.Clamp((color.Y + 1.0) * 127.5, 0.0, 255.0);
+            var val = (byte)MathHelper.Clamp((color.Z + 1.0) * 127.5, 0.0, 255.0);
+
+            var properties = new BlockProperties
+            {
+                EntityId = block.EntityId,
+                Name = $"{block.Definition.Id.SubtypeName}:{block.Position}",
+                Position = block.Position,
+                Translation = block.Translation,
+                Orientation = block.Orientation,
+                Color = new Vector3UByte(hue, sat, val)
+            };
+
+            var cubeDefinition = block.Definition;
+
+            uint? modelId = null;
+            if (!string.IsNullOrWhiteSpace(block.Model))
+                modelId = ProcessModel(block.Model);
+            else if (cubeDefinition != null)
+                modelId = MergeMultiModel(block.Definition);
+
+            if (!modelId.HasValue) return properties;
+
+            properties.Model = modelId;
+            var modifiers = trackedModelMaterials[modelId.Value]
+                .Select(m => new { id = trackedMaterialIds[m], mod = ProcessOverride(skin, m) })
+                .Where(m => m.mod.HasValue)
+                .Select(m => (m.id, m.mod.Value))
+                .ToList();
+
+            if (modifiers.Count > 0)
+                properties.Modifiers = modifiers;
+
+            return properties;
+        }
+
+        private uint MergeMultiModel(MyCubeBlockDefinition definition)
+        {
+            var key = definition.Id.SubtypeName;
+            if (trackedModels.TryGetValue(key, out var id))
+                return id;
+
+            var cubeDefinition = definition.CubeDefinition;
+            if (cubeDefinition == null)
+                throw new ArgumentException("Block must have a cube definition");
+
+            var tiles = MyCubeGridDefinitions.GetCubeTiles(definition);
+            if (tiles == null || tiles.Length == 0)
+                throw new ArgumentException("Block must have cube tiles");
+
+            id = trackedModelId++;
+            trackedModels.Add(key, id);
+
+            log.WriteLine($"Merge MultiModel {key}");
+
+            var vertices = new List<Vector3>();
+            var normals = new List<Vector3>();
+            var texCoords = new List<Vector2>();
+            var triangles = new List<Vector3I>();
+            var meshes = new List<MeshInfo>();
+            var materialNames = new List<string>();
+
+            var vertexOffset = 0;
+            var triangleOffset = 0;
+            foreach (var (tile, asset) in tiles.Zip(cubeDefinition.Model, (t, m) => (t, m)))
+            {
+                var model = GetCubeModel(asset);
+                if (model.Vertices.Length != model.TexCoords.Length)
+                    throw new ArgumentException("Model must have equal number of vertices and tex coords");
+
+                foreach (var pair in model.Vertices)
+                {
+                    var vertex = VF_Packer.UnpackPosition(pair.Position);
+                    var normal = VF_Packer.UnpackNormal(pair.Normal);
+                    vertices.Add(Vector3.Transform(vertex, tile.LocalMatrix));
+                    normals.Add(Vector3.TransformNormal(normal, tile.LocalMatrix));
+                }
+
+                texCoords.AddRange(model.TexCoords.Select(texCoord => texCoord.ToVector2()));
+                triangles.AddRange(model.Triangles.Select(triangle =>
+                    new Vector3I(triangle.I0, triangle.I1, triangle.I2) + vertexOffset));
+
+                foreach (var mesh in model.GetMeshList())
+                {
+                    meshes.Add(new MeshInfo
+                    {
+                        TriStart = (uint)(mesh.TriStart + triangleOffset), TriCount = (uint)mesh.TriCount,
+                        Material = ProcessMaterial(mesh.Material)
+                    });
+                    if (mesh.Material.Name != null)
+                        materialNames.Add(mesh.Material.Name);
+                }
+
+                vertexOffset = vertices.Count;
+                triangleOffset = triangles.Count;
+            }
+
+            trackedModelMaterials.Add(id, materialNames.ToArray());
+
+            writer.Model(id, key,
+                w => vertices.ForEach(w.Write),
+                w => normals.ForEach(w.Write),
+                w => texCoords.ForEach(w.Write),
+                w => triangles.ForEach(w.Write),
+                w => meshes
+                    .ForEach(t =>
+                    {
+                        w.Write(t.TriStart);
+                        w.Write(t.TriCount);
+                        w.Write(t.Material);
+                    })
+            );
+
+            return id;
+        }
+
+        private MyModel GetCubeModel(string asset)
+        {
+            if (cubeModels.TryGetValue(asset, out var model))
+                return model;
+
+            model = new MyModel(asset)
+            {
+                LoadUV = true
+            };
+            model.LoadData();
+            cubeModels.Add(asset, model);
+            return model;
+        }
+
+        private uint ProcessModel(string asset)
+        {
+            if (trackedModels.TryGetValue(asset, out var id))
+                return id;
+            id = trackedModelId++;
+            trackedModels.Add(asset, id);
+
+            log.WriteLine($"Process Model {asset}");
+
+            var model = new MyModel(asset)
+            {
+                LoadUV = true
+            };
+            model.LoadData();
+            ProcessModel(model, id);
+            model.UnloadData();
+            return id;
+        }
+
+        private void ProcessModel(MyModel model, uint id)
+        {
+            var meshes = new List<MeshInfo>();
+            var materialNames = new List<string>();
+
+            log.WriteLine($"Process Model {model.AssetName}");
 
             foreach (var mesh in model.GetMeshList())
             {
                 var material = mesh.Material;
-                log.WriteLine($"Material Name={material.Name} Draw={material.DrawTechnique} GlassCW={material.GlassCW} GlassCCW={material.GlassCCW} GlassSmooth={material.GlassSmooth}");
-                var gltfMaterial = ExportMaterial(material, skin, color);
-                var gltfPrimitive = gltfMesh.UsePrimitive(gltfMaterial);
-                log.WriteLine($"Mesh Name={mesh.AssetName} IndexStart={mesh.IndexStart} TriStart={mesh.TriStart} TriCount={mesh.TriCount}");
-                for (var i = 0; i < mesh.TriCount; i++)
+                if (!SupportedDrawModes.Contains(material.DrawTechnique))
+                    continue;
+
+                var materialId = ProcessMaterial(material);
+
+                if (material.Name != null)
+                    materialNames.Add(material.Name);
+
+                meshes.Add(new MeshInfo
                 {
-                    var triangle = model.Triangles[i + mesh.TriStart];
-                    var v0 = Util2.ConvertVector(model.GetVertex(triangle.I0));
-                    var v1 = Util2.ConvertVector(model.GetVertex(triangle.I1));
-                    var v2 = Util2.ConvertVector(model.GetVertex(triangle.I2));
-                    var n0 = Util2.ConvertVector(model.GetVertexNormal(triangle.I0));
-                    var n1 = Util2.ConvertVector(model.GetVertexNormal(triangle.I1));
-                    var n2 = Util2.ConvertVector(model.GetVertexNormal(triangle.I2));
-                    var t0 = Util2.ConvertVector(model.TexCoords[triangle.I0].ToVector2());
-                    var t1 = Util2.ConvertVector(model.TexCoords[triangle.I1].ToVector2());
-                    var t2 = Util2.ConvertVector(model.TexCoords[triangle.I2].ToVector2());
-                    gltfPrimitive.AddTriangle(((v0, n0), t0), ((v1, n1), t1), ((v2, n2), t2));
-                }
+                    TriStart = (uint)mesh.TriStart,
+                    TriCount = (uint)mesh.TriCount,
+                    Material = materialId
+                });
             }
 
-            log.WriteLine("Model end\n");
+            trackedModelMaterials.Add(id, materialNames.ToArray());
 
-            gltfMeshes.Add(identifier, gltfMesh);
-
-            return gltfMesh;
+            writer.Model(id, model.AssetName,
+                w => model.Vertices
+                    .Select(v => VF_Packer.UnpackPosition(v.Position))
+                    .ForEach(w.Write),
+                w => model.Vertices
+                    .Select(v => VF_Packer.UnpackNormal(v.Normal))
+                    .ForEach(w.Write),
+                w => model.TexCoords
+                    .Select(v => v.ToVector2())
+                    .ForEach(w.Write),
+                w => model.Triangles
+                    .ForEach(t =>
+                    {
+                        w.Write(t.I0);
+                        w.Write(t.I1);
+                        w.Write(t.I2);
+                    }),
+                w => meshes
+                    .ForEach(t =>
+                    {
+                        w.Write(t.TriStart);
+                        w.Write(t.TriCount);
+                        w.Write(t.Material);
+                    })
+            );
         }
 
-        public MaterialBuilder ExportMaterial(MyMeshMaterial material, string skin, Vector3 color)
+        private uint? ProcessOverride(string skin, string material)
         {
-            var identifier = new AssetIdentifier(material.Name, skin, color);
-            if (gltfMaterials.TryGetValue(identifier, out var gltfMaterial))
-                return gltfMaterial;
+            var key = (skin, material);
+            if (trackedOverrides.TryGetValue(key, out var cachedId))
+                return cachedId;
 
-            var files = materials[identifier];
+            var modifier = materialLibrary.GetModifier(skin, material);
+            if (modifier == null)
+            {
+                trackedOverrides.Add(key, null);
+                return null;
+            }
 
-            gltfMaterial = new MaterialBuilder()
-                .WithMetallicRoughnessShader()
-                .WithBaseColor(files.ColorPath)
-                .WithNormal(files.NormalPath)
-                .WithChannelImage(KnownChannel.MetallicRoughness, files.RoughMetalPath);
-            gltfMaterials.Add(identifier, gltfMaterial);
+            var id = trackedMaterialId++;
+            trackedOverrides.Add(key, id);
 
-            return gltfMaterial;
+            log.WriteLine($"Process Override Skin={skin} Material={material}");
+
+            writer.Material(id, new MaterialProperties
+            {
+                ColorMetal = ProcessTexture(modifier.ColorMetal),
+                AddMaps = ProcessTexture(modifier.AddMaps),
+                NormalGloss = ProcessTexture(modifier.NormalGloss),
+                AlphaMask = ProcessTexture(modifier.AlphaMask)
+            });
+
+            return id;
+        }
+
+        private uint ProcessMaterial(MyMeshMaterial material)
+        {
+            if (material.Name == null)
+                return 0;
+
+            if (trackedMaterialIds.TryGetValue(material.Name, out var id))
+                return id;
+            id = trackedMaterialId++;
+            trackedMaterialIds.Add(material.Name, id);
+
+            log.WriteLine($"Process Material {material.Name}");
+
+            var textures = MaterialLibrary.GetTextures(material);
+
+            writer.Material(id, new MaterialProperties
+            {
+                ColorMetal = ProcessTexture(textures.ColorMetal),
+                AddMaps = ProcessTexture(textures.AddMaps),
+                NormalGloss = ProcessTexture(textures.NormalGloss),
+                AlphaMask = ProcessTexture(textures.AlphaMask)
+            });
+
+            return id;
+        }
+
+        private uint ProcessTexture(string asset)
+        {
+            if (asset == null)
+                return 0;
+
+            if (trackedTextureIds.TryGetValue(asset, out var id))
+                return id;
+            id = trackedTextureId++;
+            trackedTextureIds.Add(asset, id);
+
+            log.WriteLine($"Process Texture {asset}");
+
+            var path = Path.Combine(Path.GetDirectoryName(asset) ?? ".", Path.GetFileNameWithoutExtension(asset));
+
+            writer.Texture(id, TextureType.Auto, asset, path, null);
+            return id;
+        }
+
+        public static void GetSubParts(MiniLog log, IDictionary<string, MyEntitySubpart> dictionary, string prefix = "")
+        {
+            foreach (var pair in dictionary)
+            {
+                log.WriteLine($"{prefix}{pair.Key}:{pair.Value.Model.AssetName}");
+                GetSubParts(log, pair.Value.Subparts, prefix + "  ");
+            }
+        }
+
+        private class MeshInfo
+        {
+            public uint TriStart { get; set; }
+            public uint TriCount { get; set; }
+            public uint Material { get; set; }
         }
     }
 }

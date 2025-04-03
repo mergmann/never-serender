@@ -4,6 +4,6 @@ namespace NeverSerender.Output
     {
         Auto = 0,
         Png = 1,
-        Dds = 2,
+        Dds = 2
     }
 }

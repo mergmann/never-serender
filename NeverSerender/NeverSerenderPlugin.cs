@@ -1,8 +1,8 @@
-﻿using HarmonyLib;
-using Sandbox.Game.World;
-using System;
+﻿using System;
 using System.Reflection;
 using System.Runtime.CompilerServices;
+using HarmonyLib;
+using Sandbox.Game.World;
 using VRage.Game;
 using VRage.Game.Components;
 using VRage.Input;
@@ -24,7 +24,7 @@ namespace NeverSerender
         [MethodImpl(MethodImplOptions.NoInlining)]
         public void Init(object gameInstance)
         {
-            Harmony harmony = new Harmony(Name);
+            var harmony = new Harmony(Name);
             harmony.PatchAll(Assembly.GetExecutingAssembly());
 
             Instance = this;
@@ -48,7 +48,7 @@ namespace NeverSerender
             {
                 LogPath = LogPath,
                 OutPath = OutPath,
-                AutoFlush = true,
+                AutoFlush = true
             };
 
             private Capture capture;

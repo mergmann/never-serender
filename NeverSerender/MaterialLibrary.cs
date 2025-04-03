@@ -9,19 +9,19 @@ namespace NeverSerender
 {
     public class MaterialLibrary
     {
-        private readonly Dictionary<string, Dictionary<string, Textures>> modifiers;
         private readonly Dictionary<string, Vector3> colorOverrides;
+        private readonly Dictionary<string, Dictionary<string, Textures>> modifiers;
 
         public MaterialLibrary()
         {
             modifiers = new Dictionary<string, Dictionary<string, Textures>>();
             colorOverrides = new Dictionary<string, Vector3>();
-            
+
             foreach (var modifier in MyDefinitionManager.Static.GetAssetModifierDefinitions())
             {
                 if (modifier.DefaultColor.HasValue)
                     colorOverrides.Add(modifier.Id.SubtypeName, modifier.DefaultColor.Value.ColorToHSVDX11());
-                
+
                 var skinModifiers = new Dictionary<string, Textures>();
                 foreach (var texture in modifier.Textures)
                 {
@@ -54,9 +54,11 @@ namespace NeverSerender
             skinModifiers?.TryGetValue(material, out modifier);
             return modifier;
         }
-        
-        public Vector3? GetColorOverride(string skin) =>
-            colorOverrides.TryGetValue(skin, out var color) ? color : (Vector3?)null;
+
+        public Vector3? GetColorOverride(string skin)
+        {
+            return colorOverrides.TryGetValue(skin, out var color) ? color : (Vector3?)null;
+        }
 
         public static Textures GetTextures(MyMeshMaterial source)
         {
@@ -73,7 +75,7 @@ namespace NeverSerender
                 ColorMetal = colorMetal,
                 AddMaps = addMaps,
                 NormalGloss = normalGloss,
-                AlphaMask = alphaMask,
+                AlphaMask = alphaMask
             };
         }
 

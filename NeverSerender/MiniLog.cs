@@ -5,10 +5,10 @@ namespace NeverSerender
 {
     public class MiniLog
     {
-        private readonly StreamWriter writer;
+        private readonly bool autoFlush;
         private readonly object @lock;
         private readonly string name;
-        private readonly bool autoFlush;
+        private readonly StreamWriter writer;
         private DateTime lastFlushed;
 
         private MiniLog(StreamWriter writer, object @lock, string name, bool autoFlush)
@@ -26,7 +26,7 @@ namespace NeverSerender
 
         public MiniLog Named(string childName)
         {
-            var newName = this.name != null ? this.name + "/" + childName : childName;
+            var newName = name != null ? name + "/" + childName : childName;
             return new MiniLog(writer, @lock, newName, autoFlush);
         }
 

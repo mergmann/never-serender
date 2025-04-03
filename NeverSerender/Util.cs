@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Text;
 using Sandbox.Definitions;
-using Sandbox.Game.Entities;
 using Sandbox.Game.Entities.Cube;
 using VRageMath;
 
@@ -9,12 +8,12 @@ namespace NeverSerender
 {
     public static class Util
     {
-        public static string VectorToString(VRageMath.Vector4 vector)
+        public static string VectorToString(Vector4 vector)
         {
             return $"[{vector.X}, {vector.Y}, {vector.Z}, {vector.W}]";
         }
 
-        public static string MatrixToString(VRageMath.Matrix m)
+        public static string MatrixToString(Matrix m)
         {
             var builder = new StringBuilder();
             builder.Append("[\n");
@@ -28,7 +27,7 @@ namespace NeverSerender
             builder.Append("]");
             return builder.ToString();
         }
-        
+
         public static string GetActiveBlockModel(MySlimBlock block, out MatrixI orientation)
         {
             var buildLevelRatio = block.BuildLevelRatio;
