@@ -136,6 +136,16 @@ namespace NeverSerender
 
             var grids = new List<GridSnapshot>();
 
+            // var character = MySession.Static.LocalCharacter;
+            // var transforms = character.BoneRelativeTransforms;
+            // var bones = character.Model.Bones;
+            // var mapping = character.Model.BoneMapping;
+            //
+            // foreach (var bone in bones)
+            //     mainLog.WriteLine($"Bone #{bone.Index} {bone.Name} Parent: {bone.Parent}");
+            //
+            // mainLog.WriteLine($"transforms {transforms?.Length} bones {bones?.Length} mapping {mapping?.Length}");
+
             foreach (var entity in MyEntities.GetEntities())
             {
                 // mainLog.WriteLine(

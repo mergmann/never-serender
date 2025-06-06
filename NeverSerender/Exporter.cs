@@ -325,8 +325,6 @@ namespace NeverSerender
             id = trackedModelId++;
             trackedModels.Add(asset, id);
 
-            log.WriteLine($"Process Model {asset}");
-
             var model = new MyModel(asset)
             {
                 LoadUV = true
@@ -432,6 +430,7 @@ namespace NeverSerender
             trackedMaterialIds.Add(material.Name, id);
 
             log.WriteLine($"Process Material {material.Name}");
+            log.WriteLine($"DrawTechnique={material.DrawTechnique} GlassCW={material.GlassCW} GlassCCW={material.GlassCCW} GlassSmooth={material.GlassSmooth}");
 
             var textures = MaterialLibrary.GetTextures(material);
 
