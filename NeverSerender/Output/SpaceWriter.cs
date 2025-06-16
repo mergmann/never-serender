@@ -189,11 +189,12 @@ namespace NeverSerender.Output
                 w =>
                 {
                     w.Write(id);
+                    if (props.Name != null)
+                        w.PropertyName(props.Name);
+                    w.PropertyRenderMode(props.RenderMode);
+                    foreach (var texture in props.Textures)
+                        w.PropertyTexture(texture.Key, texture.Value);
                     w.PropertyEnd();
-                    w.Write(props.ColorMetal);
-                    w.Write(props.AddMaps);
-                    w.Write(props.NormalGloss);
-                    w.Write(props.AlphaMask);
                 });
         }
 

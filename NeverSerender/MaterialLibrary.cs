@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using NLog;
 using Sandbox.Definitions;
 using VRageMath;
 using VRageRender.Messages;
@@ -10,11 +11,11 @@ namespace NeverSerender
     public class MaterialLibrary
     {
         private readonly Dictionary<string, Vector3> colorOverrides;
-        private readonly Dictionary<string, Dictionary<string, Textures>> modifiers;
+        private readonly Dictionary<string, Dictionary<string, Dictionary<string, string>>> modifiers;
 
         public MaterialLibrary()
         {
-            modifiers = new Dictionary<string, Dictionary<string, Textures>>();
+            modifiers = new Dictionary<string, Dictionary<string, Dictionary<string, string>>>();
             colorOverrides = new Dictionary<string, Vector3>();
 
             foreach (var modifier in MyDefinitionManager.Static.GetAssetModifierDefinitions())
@@ -22,21 +23,21 @@ namespace NeverSerender
                 if (modifier.DefaultColor.HasValue)
                     colorOverrides.Add(modifier.Id.SubtypeName, modifier.DefaultColor.Value.ColorToHSVDX11());
 
-                var skinModifiers = new Dictionary<string, Textures>();
+                var skinModifiers = new Dictionary<string, Dictionary<string, string>>();
                 foreach (var texture in modifier.Textures)
                 {
                     if (!skinModifiers.TryGetValue(texture.Location, out var value))
                     {
-                        value = new Textures();
+                        value = new Dictionary<string, string>();
                         skinModifiers.Add(texture.Location, value);
                     }
 
                     switch (texture.Type)
                     {
-                        case MyTextureType.ColorMetal: value.ColorMetal = texture.Filepath; break;
-                        case MyTextureType.NormalGloss: value.NormalGloss = texture.Filepath; break;
-                        case MyTextureType.Extensions: value.AddMaps = texture.Filepath; break;
-                        case MyTextureType.Alphamask: value.AlphaMask = texture.Filepath; break;
+                        case MyTextureType.ColorMetal: value["ColorMetalTexture"] = texture.Filepath; break;
+                        case MyTextureType.NormalGloss: value["NormalGlossTexture"] = texture.Filepath; break;
+                        case MyTextureType.Extensions: value["AddMapsTexture"] = texture.Filepath; break;
+                        case MyTextureType.Alphamask: value["AlphamaskTexture"] = texture.Filepath; break;
                         case MyTextureType.Unspecified: break;
                         default:
                             throw new ArgumentOutOfRangeException();
@@ -47,9 +48,9 @@ namespace NeverSerender
             }
         }
 
-        public Textures GetModifier(string skin, string material)
+        public Dictionary<string, string> GetModifier(string skin, string material)
         {
-            Textures modifier = null;
+            Dictionary<string, string> modifier = null;
             modifiers.TryGetValue(skin, out var skinModifiers);
             skinModifiers?.TryGetValue(material, out modifier);
             return modifier;
@@ -60,7 +61,7 @@ namespace NeverSerender
             return colorOverrides.TryGetValue(skin, out var color) ? color : (Vector3?)null;
         }
 
-        public static Textures GetTextures(MyMeshMaterial source)
+        public static Textures GetTextures(MiniLog log, MyMeshMaterial source)
         {
             if (source.Textures == null)
                 return new Textures();
@@ -69,6 +70,12 @@ namespace NeverSerender
             source.Textures.TryGetValue("AddMapsTexture", out var addMaps);
             source.Textures.TryGetValue("NormalGlossTexture", out var normalGloss);
             source.Textures.TryGetValue("AlphamaskTexture", out var alphaMask);
+            foreach (var key in source.Textures.Keys)
+            {
+                if (key != "ColorMetalTexture" && key != "AddMapsTexture" &&
+                    key != "NormalGlossTexture" && key != "AlphamaskTexture")
+                    log.WriteLine($"Unexpected texture key: ({key}): ({source.Textures[key]})");
+            }
 
             return new Textures
             {

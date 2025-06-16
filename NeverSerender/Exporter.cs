@@ -24,7 +24,8 @@ namespace NeverSerender
             MyMeshDrawTechnique.MESH,
             MyMeshDrawTechnique.DECAL,
             MyMeshDrawTechnique.DECAL_CUTOUT,
-            MyMeshDrawTechnique.DECAL_NOPREMULT
+            MyMeshDrawTechnique.DECAL_NOPREMULT,
+            MyMeshDrawTechnique.GLASS,
         };
 
         private readonly Dictionary<string, MyModel> cubeModels = new Dictionary<string, MyModel>();
@@ -345,6 +346,7 @@ namespace NeverSerender
             foreach (var mesh in model.GetMeshList())
             {
                 var material = mesh.Material;
+                log.WriteLine($"ShowMat ({material.Name}) DrawTechnique={material.DrawTechnique} GlassCW={material.GlassCW} GlassCCW={material.GlassCCW} GlassSmooth={material.GlassSmooth}");
                 if (!SupportedDrawModes.Contains(material.DrawTechnique))
                     continue;
 
@@ -410,10 +412,8 @@ namespace NeverSerender
 
             writer.Material(id, new MaterialProperties
             {
-                ColorMetal = ProcessTexture(modifier.ColorMetal),
-                AddMaps = ProcessTexture(modifier.AddMaps),
-                NormalGloss = ProcessTexture(modifier.NormalGloss),
-                AlphaMask = ProcessTexture(modifier.AlphaMask)
+                Name = material,
+                Textures = ProcessTextures(modifier)
             });
 
             return id;
@@ -432,17 +432,40 @@ namespace NeverSerender
             log.WriteLine($"Process Material {material.Name}");
             log.WriteLine($"DrawTechnique={material.DrawTechnique} GlassCW={material.GlassCW} GlassCCW={material.GlassCCW} GlassSmooth={material.GlassSmooth}");
 
-            var textures = MaterialLibrary.GetTextures(material);
+            // var textures = MaterialLibrary.GetTextures(log.Named("Materials"), material);
 
             writer.Material(id, new MaterialProperties
             {
-                ColorMetal = ProcessTexture(textures.ColorMetal),
-                AddMaps = ProcessTexture(textures.AddMaps),
-                NormalGloss = ProcessTexture(textures.NormalGloss),
-                AlphaMask = ProcessTexture(textures.AlphaMask)
+                Name = material.Name,
+                RenderMode = material.DrawTechnique == MyMeshDrawTechnique.GLASS ? RenderMode.Glass : RenderMode.Normal,
+                Textures = ProcessTextures(material.Textures)
             });
 
             return id;
+        }
+
+        private IDictionary<TextureKind, uint> ProcessTextures(IDictionary<string, string> names)
+        {
+            var textures = new Dictionary<TextureKind, uint>();
+            foreach (var pair in names.Where(pair => !string.IsNullOrEmpty(pair.Key)))
+            {
+                switch (pair.Key)
+                {
+                    case "ColorMetalTexture":
+                        textures[TextureKind.ColorMetal] = ProcessTexture(pair.Value);
+                        break;
+                    case "NormalGlossTexture":
+                        textures[TextureKind.NormalGloss] = ProcessTexture(pair.Value);
+                        break;
+                    case "AddMapsTexture":
+                        textures[TextureKind.AddMaps] = ProcessTexture(pair.Value);
+                        break;
+                    case "AlphamaskTexture":
+                        textures[TextureKind.AlphaMask] = ProcessTexture(pair.Value);
+                        break;
+                }
+            }
+            return textures;
         }
 
         private uint ProcessTexture(string asset)

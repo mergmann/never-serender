@@ -12,7 +12,7 @@ using VRage.Utils;
 namespace NeverSerender
 {
     // ReSharper disable once UnusedType.Global
-    public class NeverSerenderPlugin : IPlugin, IDisposable
+    public class NeverSerenderPlugin : IPlugin
     {
         private const string LogPath = "Z:/home/mattisb/spacemodel/neverserender.txt";
         private const string OutPath = "Z:/home/mattisb/spacemodel/model.semodel";

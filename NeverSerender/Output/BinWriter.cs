@@ -327,6 +327,19 @@ namespace NeverSerender.Output
             Write((ushort)Property.Show);
             Write(value);
         }
+        
+        public void PropertyRenderMode(RenderMode value)
+        {
+            Write((ushort)Property.RenderMode);
+            Write((byte)value);
+        }
+
+        public void PropertyTexture(TextureKind kind, uint value)
+        {
+            Write((ushort)Property.Texture);
+            Write((byte)kind);
+            Write(value);
+        }
 
         public void PropertyEnd()
         {
