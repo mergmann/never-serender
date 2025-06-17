@@ -97,12 +97,6 @@
         <Reference Include="Sandbox.RenderDirect, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null">
             <HintPath>..\Bin64\Sandbox.RenderDirect.dll</HintPath>
         </Reference>
-        <Reference Include="SixLabors.Core, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null">
-            <HintPath>..\Bin64\SixLabors.Core.dll</HintPath>
-        </Reference>
-        <Reference Include="SixLabors.ImageSharp, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null">
-            <HintPath>..\Bin64\SixLabors.ImageSharp.dll</HintPath>
-        </Reference>
         <Reference Include="SpaceEngineers.Game, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null">
             <HintPath>..\Bin64\SpaceEngineers.Game.dll</HintPath>
         </Reference>
@@ -522,7 +516,6 @@
         <Compile Include="Snapshot\EntitySnapshot.cs"/>
         <Compile Include="Snapshot\GridSnapshot.cs"/>
         <Compile Include="Snapshot\LightSnapshot.cs"/>
-        <Compile Include="Textures.cs"/>
         <Compile Include="Util.cs"/>
     </ItemGroup>
     <ItemGroup>

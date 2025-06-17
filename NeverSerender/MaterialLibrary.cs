@@ -1,10 +1,8 @@
 using System;
 using System.Collections.Generic;
-using NLog;
 using Sandbox.Definitions;
 using VRageMath;
 using VRageRender.Messages;
-using VRageRender.Models;
 
 namespace NeverSerender
 {
@@ -59,37 +57,6 @@ namespace NeverSerender
         public Vector3? GetColorOverride(string skin)
         {
             return colorOverrides.TryGetValue(skin, out var color) ? color : (Vector3?)null;
-        }
-
-        public static Textures GetTextures(MiniLog log, MyMeshMaterial source)
-        {
-            if (source.Textures == null)
-                return new Textures();
-
-            source.Textures.TryGetValue("ColorMetalTexture", out var colorMetal);
-            source.Textures.TryGetValue("AddMapsTexture", out var addMaps);
-            source.Textures.TryGetValue("NormalGlossTexture", out var normalGloss);
-            source.Textures.TryGetValue("AlphamaskTexture", out var alphaMask);
-            foreach (var key in source.Textures.Keys)
-            {
-                if (key != "ColorMetalTexture" && key != "AddMapsTexture" &&
-                    key != "NormalGlossTexture" && key != "AlphamaskTexture")
-                    log.WriteLine($"Unexpected texture key: ({key}): ({source.Textures[key]})");
-            }
-
-            return new Textures
-            {
-                ColorMetal = colorMetal,
-                AddMaps = addMaps,
-                NormalGloss = normalGloss,
-                AlphaMask = alphaMask
-            };
-        }
-
-        public class Modifier
-        {
-            public Textures Textures { get; set; }
-            public Vector3? Color { get; set; }
         }
     }
 }

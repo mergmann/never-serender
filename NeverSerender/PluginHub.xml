@@ -22,6 +22,5 @@
         solution.
     </Description>
     <NuGetReferences>
-        <PackageReference Include="Pfim" Version="0.11.2"/>
     </NuGetReferences>
 </PluginData>

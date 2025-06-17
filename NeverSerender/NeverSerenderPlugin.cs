@@ -3,6 +3,7 @@ using System.Reflection;
 using System.Runtime.CompilerServices;
 using HarmonyLib;
 using Sandbox.Game.World;
+using Sandbox.Graphics.GUI;
 using VRage.Game;
 using VRage.Game.Components;
 using VRage.Input;
@@ -90,10 +91,10 @@ namespace NeverSerender
 
         // TODO: Uncomment and use this method to create a plugin configuration dialog
         // ReSharper disable once UnusedMember.Global
-        /*public void OpenConfigDialog()
-        {
-            MyGuiSandbox.AddScreen(new MyPluginConfigDialog());
-        }*/
+        // public void OpenConfigDialog()
+        // {
+        //     MyGuiSandbox.AddScreen(new MyPluginConfigDialog());
+        // }
 
         //TODO: Uncomment and use this method to load asset files
         /*public void LoadAssets(string folder)
