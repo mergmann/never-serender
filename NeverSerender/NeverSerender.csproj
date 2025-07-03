@@ -494,40 +494,75 @@
     </ItemGroup>
     <ItemGroup>
         <Compile Include="Capture.cs"/>
-        <Compile Include="EntityChangeTracker.cs"/>
-        <Compile Include="Exporter.cs"/>
-        <Compile Include="ExportSettings.cs"/>
-        <Compile Include="GridChangeTracker.cs"/>
-        <Compile Include="MaterialLibrary.cs"/>
-        <Compile Include="MiniLog.cs"/>
-        <Compile Include="NeverSerenderPlugin.cs"/>
-        <Compile Include="Output\BlockProperties.cs"/>
-        <Compile Include="Output\Event.cs"/>
-        <Compile Include="Output\MaterialProperties.cs"/>
-        <Compile Include="Output\Property.cs"/>
+        <Compile Include="Changes\EntityChangeTracker.cs" />
+        <Compile Include="Changes\GridChangeTracker.cs" />
+        <Compile Include="Exporter.cs" />
+        <Compile Include="ExporterSettings.cs" />
+        <Compile Include="MaterialOverrides.cs" />
+        <Compile Include="MiniLog.cs" />
+        <Compile Include="Output\EntityProperties.cs" />
+        <Compile Include="Plugin.cs" />
+        <Compile Include="Output\BlockProperties.cs" />
+        <Compile Include="Output\EventId.cs" />
+        <Compile Include="Output\MaterialProperties.cs" />
+        <Compile Include="Output\PropertyId.cs" />
         <Compile Include="Output\RenderMode.cs" />
-        <Compile Include="Output\SpaceWriter.cs"/>
-        <Compile Include="Output\BinWriter.cs"/>
+        <Compile Include="Output\SpaceModelWriter.cs" />
+        <Compile Include="Output\BinWriter.cs" />
         <Compile Include="Output\TextureKind.cs" />
-        <Compile Include="Output\TextureType.cs"/>
-        <Compile Include="Properties\AssemblyInfo.cs"/>
-        <Compile Include="Snapshot\BlockSnapshot.cs"/>
-        <Compile Include="Snapshot\ChangeSnapshot.cs"/>
-        <Compile Include="Snapshot\EntitySnapshot.cs"/>
-        <Compile Include="Snapshot\GridSnapshot.cs"/>
-        <Compile Include="Snapshot\LightSnapshot.cs"/>
-        <Compile Include="Util.cs"/>
+        <Compile Include="Output\TextureType.cs" />
+        <Compile Include="Properties\AssemblyInfo.cs" />
+        <Compile Include="Config\AbstractConfig.cs" />
+        <Compile Include="Config\GlobalConfig.cs" />
+        <Compile Include="Config\ConfigStorage.cs" />
+        <Compile Include="Config\ExportConfig.cs" />
+        <Compile Include="Config\IConfig.cs" />
+        <Compile Include="Config\ConfigGenerator.cs" />
+        <Compile Include="Snapshot\BlockSnapshot.cs" />
+        <Compile Include="Snapshot\ChangeSnapshot.cs" />
+        <Compile Include="Snapshot\EntitySnapshot.cs" />
+        <Compile Include="Snapshot\GridSnapshot.cs" />
+        <Compile Include="Snapshot\LightSnapshot.cs" />
+        <Compile Include="Tools\BlockTools.cs" />
+        <Compile Include="Tools\ColorTools.cs" />
+        <Compile Include="UserInterface\Elements\Attributes\Button.cs" />
+        <Compile Include="UserInterface\Elements\Attributes\Checkbox.cs" />
+        <Compile Include="UserInterface\Elements\Attributes\Color.cs" />
+        <Compile Include="UserInterface\Elements\Attributes\Dropdown.cs" />
+        <Compile Include="UserInterface\Elements\Attributes\IElementAttribute.cs" />
+        <Compile Include="UserInterface\Elements\Attributes\Keybind.cs" />
+        <Compile Include="UserInterface\Elements\Attributes\Slider.cs" />
+        <Compile Include="UserInterface\Elements\Attributes\Textbox.cs" />
+        <Compile Include="UserInterface\Elements\Button.cs" />
+        <Compile Include="UserInterface\Elements\Checkbox.cs" />
+        <Compile Include="UserInterface\Elements\Color.cs" />
+        <Compile Include="UserInterface\Elements\Control.cs" />
+        <Compile Include="UserInterface\Elements\Dropdown.cs" />
+        <Compile Include="UserInterface\Elements\ElementProperty.cs" />
+        <Compile Include="UserInterface\Elements\ElementList.cs" />
+        <Compile Include="UserInterface\Elements\SliderFloatElement.cs" />
+        <Compile Include="UserInterface\Elements\IElement.cs" />
+        <Compile Include="UserInterface\Elements\Keybind.cs" />
+        <Compile Include="UserInterface\Elements\SliderIntElement.cs" />
+        <Compile Include="UserInterface\Elements\Textbox.cs" />
+        <Compile Include="UserInterface\ExportScreen.cs" />
+        <Compile Include="UserInterface\Layouts\Layout.cs" />
+        <Compile Include="UserInterface\Layouts\None.cs" />
+        <Compile Include="UserInterface\Layouts\Simple.cs" />
+        <Compile Include="UserInterface\ConfigScreen.cs" />
+        <Compile Include="UserInterface\Tools\KeyBind.cs" />
+        <Compile Include="UserInterface\Tools\Tools.cs" />
     </ItemGroup>
     <ItemGroup>
-        <Content Include="deploy.bat"/>
-        <Content Include="deploy.sh"/>
-        <Content Include="PluginHub.xml"/>
+        <Content Include="deploy.bat" />
+        <Content Include="deploy.sh" />
+        <Content Include="PluginHub.xml" />
     </ItemGroup>
     <ItemGroup>
-        <None Include="App.config"/>
+        <None Include="App.config" />
     </ItemGroup>
     <ItemGroup>
-        <PackageReference Include="Lib.Harmony" Version="2.2.2"/>
+        <PackageReference Include="Lib.Harmony" Version="2.2.2" />
     </ItemGroup>
     <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets"/>
     <Target Name="PostBuild" AfterTargets="PostBuildEvent">

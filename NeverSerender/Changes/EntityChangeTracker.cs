@@ -6,7 +6,7 @@ using VRage.Game.Components;
 using VRage.Game.Entity;
 using VRageMath;
 
-namespace NeverSerender
+namespace NeverSerender.Changes
 {
     public class EntityChangeTracker : IDisposable
     {

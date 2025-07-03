@@ -1,26 +1,32 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from enum import Enum
-from io import SEEK_CUR
 import math
 import os
-from re import I
 import struct
-from typing import IO, Any, Callable, Iterable, Self, TypeVar
+import time
 import typing
 import bpy
 import bpy_extras as bpx
+
+from dataclasses import dataclass
+from enum import Enum
+from io import SEEK_CUR, SEEK_END
 from mathutils import Matrix
+from typing import IO, Any, Callable, Generic, Iterable, Self, TypeVar
+from bpy_extras.wm_utils.progress_report import ProgressReport,  ProgressReportSubstep
 
 Vec3i = tuple[int, int, int]
+
+Vec3i_Zero = (0, 0, 0)
 
 Vec2 = tuple[float, float]
 Vec3 = tuple[float, float, float]
 Vec4 = tuple[float, float, float, float]
 
+Vec3_Zero = (0.0, 0.0, 0.0)
+
 Mat4 = tuple[Vec4, Vec4, Vec4, Vec4]
-Mat4_Default = (
+Mat4_Identity = (
     (1.0, 0.0, 0.0, 0.0),
     (0.0, 1.0, 0.0, 0.0),
     (0.0, 0.0, 1.0, 0.0),
@@ -28,8 +34,10 @@ Mat4_Default = (
 )
 
 Color_Default = (1.0, 1.0, 1.0)
+ColorMask_Default = (0, 0, 0)
 
 _T = TypeVar('_T')
+_TE = TypeVar('_TE', bound='Event')
 _D = TypeVar('_D')
 
 NODE_SETEX = 'nSEr SETex'
@@ -38,6 +46,30 @@ GLASS_HACK = False
 """
 Enable this if the glass refracts too much
 """
+
+class PropertyType(Generic[_T]):
+    def __init__(self, magic: int, name: str, read: Callable[[BinReader], _T]) -> None:
+        self.magic = magic
+        self.name = name
+        self.read = read
+
+    def __str__(self) -> str:
+        return f'PropertyType({self.name})'
+
+    def __repr__(self) -> str:
+        return f'PropertyType({self.magic:04X}, {self.name})'
+
+class EventType(Generic[_TE]):
+    def __init__(self, magic: int, name: str, read: Callable[[int, Properties, BinReader], _TE]) -> None:
+        self.magic = magic
+        self.name = name
+        self.read = read
+
+    def __str__(self) -> str:
+        return f'EventType({self.name})'
+    
+    def __repr__(self) -> str:
+        return f'EventType({self.magic:04X}, {self.name})'
 
 class TextureType(Enum):
     Auto = 0x00
@@ -53,43 +85,6 @@ class TextureKind(Enum):
 class RenderMode(Enum):
     Normal = 0x00
     Glass = 0x01
-
-class PropertyType(Enum):
-    EndHeader    = 0x0000
-    Id           = 0x0108
-    Name         = 0x02FF
-    Author       = 0x03FF
-    Path         = 0x04FF
-    Matrix       = 0x0540
-    MatrixD      = 0x0580
-    TextureType  = 0x0601
-    Vertices     = 0x07FF
-    Normals      = 0x08FF
-    TexCoords    = 0x09FF
-    Indices      = 0x0AFF
-    Meshes       = 0x0BFF
-    MaterialMods = 0x0CFF
-    Model        = 0x0D04
-    Color        = 0x0E0C
-    Delta        = 0x0F04
-    Cone         = 0x1008
-    Scale        = 0x1104
-    Remove       = 0x1200
-    Preview      = 0x1301
-    Parent       = 0x1408
-    Show         = 0x1501
-    RenderMode   = 0x1601
-    Texture      = 0x1705
-
-class EventType(Enum):
-    End      = 0x0000
-    Advance  = 0x0010
-    Texture  = 0x0020
-    Material = 0x0030
-    Model    = 0x0040
-    Entity   = 0x0050
-    Grid     = 0x0052
-    Light    = 0x0060
 
 class Direction(Enum):
     Forward  = 0
@@ -107,31 +102,6 @@ class Direction(Enum):
             case Direction.Right:    return ( 1,  0,  0)
             case Direction.Up:       return ( 0,  1,  0)
             case Direction.Down:     return ( 0, -1,  0)
-
-class Properties:
-    def __init__(self) -> None:
-        self.data = dict[PropertyType, list[Any]]()
-
-    def add(self, key: PropertyType, value: Any) -> None:
-        if key in self.data:
-            self.data[key].append(value)
-        else:
-            self.data[key] = [value]
-
-    def get(self, key: PropertyType, default: _D = None) -> Any | _D:
-        return self.data.get(key, [default])[0]
-
-    def pop(self, key: PropertyType, default: _D = None) -> Any | _D:
-        return self.data.pop(key, [default])[0]
-    
-    def get_all(self, key: PropertyType) -> list[Any]:
-        return self.data.get(key, [])
-    
-    def pop_all(self, key: PropertyType) -> list[Any]:
-        return self.data.pop(key, [])
-    
-    def __contains__(self, key: PropertyType) -> bool:
-        return key in self.data
 
 @dataclass
 class BlockOrientation:
@@ -158,34 +128,74 @@ class MaterialOverride:
     src_id: int
     dst_id: int
 
-@dataclass
-class Block:
-    props:       Properties
-    position:    Vec3i
-    translation: Vec3
-    orientation: BlockOrientation
-    color:       Vec3i
-    entity:      int | None
-    model:       int | None
-    overrides:   list[MaterialOverride]
+class PropertyTypes:
+    EndHeader    = PropertyType[None]                   (0x0000, 'EndHeader',    lambda r: None)
+    Id           = PropertyType[int]                    (0x0108, 'Id',           lambda r: r.i64())
+    Name         = PropertyType[str]                    (0x02FF, 'Name',         lambda r: r.string())
+    Author       = PropertyType[str]                    (0x03FF, 'Author',       lambda r: r.string())
+    Path         = PropertyType[str]                    (0x04FF, 'Path',         lambda r: r.string())
+    Matrix       = PropertyType[Mat4]                   (0x0540, 'Matrix',       lambda r: r.mat4f())
+    MatrixD      = PropertyType[Mat4]                   (0x0580, 'MatrixD',      lambda r: r.mat4d())
+    TextureType  = PropertyType[TextureType]            (0x0601, 'TextureType',  lambda r: TextureType(r.u8()))
+    Vertices     = PropertyType[list[Vec3]]             (0x07FF, 'Vertices',     lambda r: r.sized().all(r.vec3f))
+    Normals      = PropertyType[list[Vec3]]             (0x08FF, 'Normals',      lambda r: r.sized().all(r.vec3f))
+    TexCoords    = PropertyType[list[Vec2]]             (0x09FF, 'TexCoords',    lambda r: r.sized().all(r.vec2f))
+    Indices      = PropertyType[list[Vec3i]]            (0x0AFF, 'Indices',      lambda r: r.sized().all(r.vec3i))
+    Meshes       = PropertyType[list[MeshInfo]]         (0x0BFF, 'Meshes',       lambda r: r.sized().all(r.mesh))
+    MaterialMods = PropertyType[list[MaterialOverride]] (0x0CFF, 'MaterialMods', lambda r: r.sized().all(r.mat_override))
+    Model        = PropertyType[int]                    (0x0D04, 'Model',        lambda r: r.u32())
+    Color        = PropertyType[Vec3]                   (0x0E0C, 'Color',        lambda r: r.vec3f())
+    ColorMask    = PropertyType[Vec3i]                  (0x0E03, 'ColorMask',    lambda r: r.vec3b())
+    Delta        = PropertyType[float]                  (0x0F04, 'Delta',        lambda r: r.f32())
+    Cone         = PropertyType[Vec2]                   (0x1008, 'Cone',         lambda r: r.vec2f())
+    Scale        = PropertyType[float]                  (0x1104, 'Scale',        lambda r: r.f32())
+    Remove       = PropertyType[None]                   (0x1200, 'Remove',       lambda r: None)
+    Preview      = PropertyType[bool]                   (0x1301, 'Preview',      lambda r: r.bool())
+    Parent       = PropertyType[int]                    (0x1404, 'Parent',       lambda r: r.u32())
+    Show         = PropertyType[bool]                   (0x1501, 'Show',         lambda r: r.bool())
+    RenderMode   = PropertyType[RenderMode]             (0x1601, 'RenderMode',   lambda r: RenderMode(r.u8()))
+    Texture      = PropertyType[tuple[TextureKind, int]](0x1705, 'Texture',      lambda r: (TextureKind(r.u8()), r.u32()))
+    Vector3      = PropertyType[Vec3]                   (0x180C, 'Vector3',      lambda r: r.vec3f())
+    Vector3S     = PropertyType[Vec3i]                  (0x1806, 'Vector3S',     lambda r: r.vec3s())
+    Orientation  = PropertyType[BlockOrientation]       (0x1901, 'Orientation',  lambda r: BlockOrientation.from_u8(r.u8()))
 
-    @classmethod
-    def read(cls, r: BinReader) -> Self:
-        position = r.vec3i()
-        translation = r.vec3f()
-        orientation = BlockOrientation.from_u8(r.u8())
-        color = r.vec3b()
-        props = r.properties()
-        return cls(
-            props,
-            position,
-            translation,
-            orientation,
-            color,
-            props.pop(PropertyType.Id, None),
-            props.pop(PropertyType.Model, None),
-            props.pop(PropertyType.MaterialMods, [])
-        )
+PropertyTypeMap = dict[int, PropertyType[Any]]()
+for attr in dir(PropertyTypes):
+    if not attr.startswith('_'):
+        prop = getattr(PropertyTypes, attr)
+        if isinstance(prop, PropertyType):
+            PropertyTypeMap[prop.magic] = prop
+
+class Properties:
+    def __init__(self) -> None:
+        self.data = dict[PropertyType[Any], list[Any]]()
+
+    def add(self, key: PropertyType[Any], value: Any) -> None:
+        if key in self.data:
+            self.data[key].append(value)
+        else:
+            self.data[key] = [value]
+
+    def get(self, key: PropertyType[_T], default: _D = None) -> _T | _D:
+        return self.data.get(key, [default])[0]
+
+    def pop(self, key: PropertyType[_T], default: _D = None) -> _T | _D:
+        return self.data.pop(key, [default])[0]
+
+    def get_all(self, key: PropertyType[_T]) -> list[_T]:
+        return self.data.get(key, [])
+
+    def pop_all(self, key: PropertyType[_T]) -> list[_T]:
+        return self.data.pop(key, [])
+
+    def __contains__(self, key: PropertyType[Any]) -> bool:
+        return key in self.data
+    
+    def __str__(self) -> str:
+        return str(self.data)
+    
+    def __repr__(self) -> str:
+        return f'Properties({self.data!r})'
 
 @dataclass
 class Event:
@@ -193,15 +203,51 @@ class Event:
     props: Properties
 
 @dataclass
+class BlockEvent(Event):
+    parent:      int
+    position:    Vec3i
+    translation: Vec3
+    orientation: BlockOrientation
+    color:       Vec3i
+    entity:      int | None
+    name:        str | None
+    model:       int | None
+    overrides:   list[MaterialOverride]
+    remove:      bool
+
+    @classmethod
+    def read(cls, id: int, props: Properties, r: BinReader) -> Self:
+        return cls(
+            id,
+            props,
+            props.pop(PropertyTypes.Parent, -1),
+            props.pop(PropertyTypes.Vector3S, Vec3i_Zero),
+            props.pop(PropertyTypes.Vector3, Vec3_Zero),
+            props.pop(PropertyTypes.Orientation, BlockOrientation.from_u8(0)),
+            props.pop(PropertyTypes.ColorMask, ColorMask_Default),
+            props.pop(PropertyTypes.Id, None),
+            props.pop(PropertyTypes.Name, None),
+            props.pop(PropertyTypes.Model, None),
+            props.pop(PropertyTypes.MaterialMods, []),
+            PropertyTypes.Remove in props,
+        )
+
+@dataclass
+class EndEvent(Event):
+    @classmethod
+    def read(cls, id: int, props: Properties, r: BinReader) -> Self:
+        return cls(id, props)
+
+@dataclass
 class AdvanceEvent(Event):
     delta: float
 
     @classmethod
-    def read(cls, id: int, props: Properties) -> Self:
+    def read(cls, id: int, props: Properties, r: BinReader) -> Self:
         return cls(
             id,
             props,
-            props.pop(PropertyType.Delta, 0.0)
+            props.pop(PropertyTypes.Delta, 0.0)
         )
 
 @dataclass
@@ -211,27 +257,13 @@ class LightEvent(Event):
     cone:   Vec2 | None
 
     @classmethod
-    def read(cls, id: int, props: Properties) -> Self:
-        return cls(
-            id,
-            props,
-            props.pop(PropertyType.MatrixD, Mat4_Default),
-            props.pop(PropertyType.Color, Color_Default),
-            props.pop(PropertyType.Cone, None),
-        )
-
-@dataclass
-class EntityBlocksEvent(Event):
-    scale:  float
-    blocks: list[Block]
-
-    @classmethod
     def read(cls, id: int, props: Properties, r: BinReader) -> Self:
         return cls(
             id,
             props,
-            props.pop(PropertyType.Scale, 1.0),
-            r.all(lambda: Block.read(r))
+            props.pop(PropertyTypes.MatrixD, Mat4_Identity),
+            props.pop(PropertyTypes.Color, Color_Default),
+            props.pop(PropertyTypes.Cone, None),
         )
 
 @dataclass
@@ -248,20 +280,20 @@ class EntityEvent(Event):
     remove:  bool
 
     @classmethod
-    def read(cls, id: int, props: Properties) -> Self:
+    def read(cls, id: int, props: Properties, r: BinReader) -> Self:
         return cls(
             id,
             props,
-            props.pop(PropertyType.Id, -1),
-            props.pop(PropertyType.Parent, None),
-            props.pop(PropertyType.Name, None),
-            props.pop(PropertyType.Matrix, None),
-            props.pop(PropertyType.MatrixD, None),
-            props.pop(PropertyType.Model, None),
-            props.get(PropertyType.Color, None),
-            props.get(PropertyType.Preview, None),
-            props.get(PropertyType.Show, None),
-            PropertyType.Remove in props,
+            props.pop(PropertyTypes.Id, -1),
+            props.pop(PropertyTypes.Parent, None),
+            props.pop(PropertyTypes.Name, None),
+            props.pop(PropertyTypes.Matrix, None),
+            props.pop(PropertyTypes.MatrixD, None),
+            props.pop(PropertyTypes.Model, None),
+            props.get(PropertyTypes.Color, None),
+            props.get(PropertyTypes.Preview, None),
+            props.get(PropertyTypes.Show, None),
+            PropertyTypes.Remove in props,
         )
 
 @dataclass
@@ -274,16 +306,16 @@ class ModelEvent(Event):
     meshes:     list[MeshInfo]
 
     @classmethod
-    def read(cls, id: int, props: Properties) -> Self:
+    def read(cls, id: int, props: Properties, r: BinReader) -> Self:
         return cls(
             id,
             props,
-            props.pop(PropertyType.Name, 'unknown'),
-            props.pop(PropertyType.Vertices, []),
-            props.pop(PropertyType.Normals, []),
-            props.pop(PropertyType.TexCoords, []),
-            props.pop(PropertyType.Indices, []),
-            props.pop(PropertyType.Meshes, []),
+            props.pop(PropertyTypes.Name, 'unknown'),
+            props.pop(PropertyTypes.Vertices, []),
+            props.pop(PropertyTypes.Normals, []),
+            props.pop(PropertyTypes.TexCoords, []),
+            props.pop(PropertyTypes.Indices, []),
+            props.pop(PropertyTypes.Meshes, []),
         )
 
 @dataclass
@@ -297,9 +329,9 @@ class MaterialEvent(Event):
         return cls(
             id,
             props,
-            props.pop(PropertyType.Name, 'unknown'),
-            props.pop(PropertyType.RenderMode, RenderMode.Normal),
-            dict(props.pop_all(PropertyType.Texture)),
+            props.pop(PropertyTypes.Name, 'unknown'),
+            props.pop(PropertyTypes.RenderMode, RenderMode.Normal),
+            dict(props.pop_all(PropertyTypes.Texture)),
         )
     
     def merge(self, other: MaterialEvent) -> MaterialEvent:
@@ -324,37 +356,52 @@ class TextureEvent(Event):
         return cls(
             id,
             props,
-            props.pop(PropertyType.TextureType, TextureType.Auto),
-            props.pop(PropertyType.Name, 'unknown'),
-            props.pop(PropertyType.Path, None),
+            props.pop(PropertyTypes.TextureType, TextureType.Auto),
+            props.pop(PropertyTypes.Name, 'unknown'),
+            props.pop(PropertyTypes.Path, None),
             data if len(data) > 0 else None,
         )
 
-@dataclass
-class RemoveEvent(Event):
-    ty: EventType
+class EventTypes:
+    End      = EventType[EndEvent]     (0x0000, 'End',      EndEvent.read)
+    Advance  = EventType[AdvanceEvent] (0x0010, 'Advance',  AdvanceEvent.read)
+    Texture  = EventType[TextureEvent] (0x0020, 'Texture',  TextureEvent.read)
+    Material = EventType[MaterialEvent](0x0030, 'Material', MaterialEvent.read)
+    Model    = EventType[ModelEvent]   (0x0040, 'Model',    ModelEvent.read)
+    Entity   = EventType[EntityEvent]  (0x0050, 'Entity',   EntityEvent.read)
+    Block    = EventType[BlockEvent]   (0x0051, 'Block',    BlockEvent.read)
+    Light    = EventType[LightEvent]   (0x0060, 'Light',    LightEvent.read)
 
-    @classmethod
-    def read(cls, ty: EventType, id: int, props: Properties) -> Self:
-        return cls(
-            id,
-            props,
-            ty,
-        )
+EventTypeMap = dict[int, EventType[Any]]()
+for attr in dir(EventTypes):
+    if not attr.startswith('_'):
+        event_type = getattr(EventTypes, attr)
+        if isinstance(event_type, EventType):
+            EventTypeMap[event_type.magic] = event_type
 
 class BinReader:
     def __init__(self, io: IO[bytes], end: int | None = None) -> None:
         self.io = io
         self.end = end
 
+    def tell(self) -> int:
+        return self.io.tell()
+    
+    def length(self) -> int:
+        pos = self.io.tell()
+        self.io.seek(0, SEEK_END)
+        length = self.io.tell()
+        self.io.seek(pos)
+        return length
+
     def raw(self, n: int) -> bytes:
         buf = bytearray()
         if self.end is not None and self.io.tell() + n > self.end:
-            raise ValueError('Cannot read larger than end')
+            raise ValueError('Attempting to read beyond end of constrained reader')
         while len(buf) < n:
             data = self.io.read(n - len(buf))
             if len(data) == 0:
-                raise EOFError()
+                raise EOFError('Unexpected end of data')
             buf.extend(data)
         return buf
     
@@ -381,6 +428,9 @@ class BinReader:
 
     def vec3b(self) -> Vec3i:
         return struct.unpack('>BBB', self.raw(3))
+
+    def vec3s(self) -> Vec3i:
+        return struct.unpack('>hhh', self.raw(6))
 
     def vec3i(self) -> Vec3i:
         return struct.unpack('>iii', self.raw(12))
@@ -433,12 +483,11 @@ class BinReader:
             raise ValueError('Cannot read rest without end')
         return self.io.read(self.end - self.io.tell())
 
-    def property(self) -> tuple[PropertyType | None, Any]:
+    def property(self) -> tuple[PropertyType[Any] | None, Any]:
         val = self.u16()
         try:
-            ty = PropertyType(val)
-            # print(ty)
-        except ValueError:
+            ty = PropertyTypeMap[val]
+        except KeyError:
             size = val & 0x00FF
             if size == 0xFF: # Dynamic size
                 size = self.u32()
@@ -446,34 +495,7 @@ class BinReader:
             print(f'Skipping unknown property type {val:>04X}')
             return None, None
         
-        match ty:
-            case PropertyType.EndHeader:    return ty, None
-            case PropertyType.Id:           return ty, self.i64()
-            case PropertyType.Name:         return ty, self.string()
-            case PropertyType.Author:       return ty, self.string()
-            case PropertyType.Path:         return ty, self.string()
-            case PropertyType.Matrix:       return ty, self.mat4f()
-            case PropertyType.MatrixD:      return ty, self.mat4d()
-            case PropertyType.TextureType:  return ty, TextureType(self.u8())
-            case PropertyType.Vertices:     return ty, self.sized().all(self.vec3f)
-            case PropertyType.Normals:      return ty, self.sized().all(self.vec3f)
-            case PropertyType.TexCoords:    return ty, self.sized().all(self.vec2f)
-            case PropertyType.Indices:      return ty, self.sized().all(self.vec3i)
-            case PropertyType.Meshes:       return ty, self.sized().all(self.mesh)
-            case PropertyType.MaterialMods: return ty, self.sized().all(self.mat_override)
-            case PropertyType.Model:        return ty, self.u32()
-            case PropertyType.Color:        return ty, self.vec3f()
-            case PropertyType.Delta:        return ty, self.f32()
-            case PropertyType.Cone:         return ty, self.vec2f()
-            case PropertyType.Scale:        return ty, self.f32()
-            case PropertyType.Remove:       return ty, None
-            case PropertyType.Preview:      return ty, self.bool()
-            case PropertyType.Parent:       return ty, self.u64()
-            case PropertyType.Show:         return ty, self.bool()
-            case PropertyType.RenderMode:   return ty, RenderMode(self.u8())
-            case PropertyType.Texture:      return ty, (TextureKind(self.u8()), self.u32())
-
-        return None, None
+        return ty, ty.read(self)
 
     def properties(self) -> Properties:
         props = Properties()
@@ -481,23 +503,25 @@ class BinReader:
             ty, prop = self.property()
             if ty is None:
                 continue
-            if ty is PropertyType.EndHeader:
+            if ty is PropertyTypes.EndHeader:
                 break
             props.add(ty, prop)
         return props
     
-    def event(self) -> tuple[EventType | None, Event | None]:
-        assert self.u16() == 0xC080 # magic
+    def event(self) -> tuple[EventType[Any] | None, Event | None]:
+        if self.u16() != 0xC080:
+            raise ValueError('Invalid magic number for event header')
         val = self.u16()
         try:
-            ty = EventType(val)
-            # print(ty)
-        except ValueError:
+            ty = EventTypeMap[val]
+        except KeyError:
             size = self.u32()
             self.io.seek(size, SEEK_CUR)
             print(f'Skipping unknown event type {val}')
             return None, None
-                
+
+        id = self.u32()
+        
         size = self.u32()
         pos = self.io.tell()
         end = pos + size
@@ -505,18 +529,9 @@ class BinReader:
 
         # print(f'Start ty={ty} size={size} pos={pos} end={end}')
 
-        id = r.u32()
         props = r.properties()
 
-        match ty:
-            case EventType.End:      event = None
-            case EventType.Advance:  event = AdvanceEvent.read(id, props)
-            case EventType.Texture:  event = TextureEvent.read(id, props, r)
-            case EventType.Material: event = MaterialEvent.read(id, props, r)
-            case EventType.Model:    event = ModelEvent.read(id, props)
-            case EventType.Entity:   event = EntityEvent.read(id, props)
-            case EventType.Grid:     event = EntityBlocksEvent.read(id, props, r)
-            case EventType.Light:    event = LightEvent.read(id, props)
+        event = ty.read(id, props, r)
 
         # print(f'End pos={self.io.tell()} end={end}')
 
@@ -526,7 +541,7 @@ class BinReader:
     def events(self) -> Iterable[Event]:
         while True:
             ty, event = self.event()
-            if ty is EventType.End:
+            if ty is EventTypes.End:
                 break
             if event is not None:
                 yield event
@@ -534,8 +549,9 @@ class BinReader:
 VariantKey = tuple[RenderMode, int | None, int | None, int | None, int | None]
 
 class Data:
-    def __init__(self, collection: bpy.types.Collection, setex: bpy.types.ShaderNodeTree) -> None:
+    def __init__(self, collection: bpy.types.Collection, setex: bpy.types.ShaderNodeTree, view_matrix: Matrix) -> None:
         self.setex = setex
+        self.view_matrix = view_matrix
         self.textures  = dict[int, bpy.types.Image]()
         self.materials = dict[int, MaterialEvent]()
         self.meshes    = dict[int, bpy.types.Mesh]()
@@ -543,7 +559,7 @@ class Data:
         self.entities  = dict[int, bpy.types.Object]()
         self.lights    = dict[int, bpy.types.Object]()
         self.variants  = dict[VariantKey, bpy.types.Material]()
-        self.entities2 = dict[int, bpy.types.Object]()
+        self.overrides = dict[int, dict[int, int]]()
         self.frame     = -1
         self.collection_entities = bpy.data.collections.new('Entities')
         self.collection_lights = bpy.data.collections.new('Lights')
@@ -569,7 +585,7 @@ def cross(a: Vec3, b: Vec3) -> Vec3:
         a[0] * b[1] - a[1] * b[0]
     )
 
-MATRIX = Matrix((
+YZ_MATRIX = Matrix((
     (1, 0, 0, 0),
     (0, 0, 1, 0),
     (0, 1, 0, 0),
@@ -579,9 +595,17 @@ MATRIX = Matrix((
 def convert_matrix(m: Mat4) -> Matrix:
     matrix = Matrix(m)
     matrix.transpose()
-    return matrix @ MATRIX
+    return matrix @ YZ_MATRIX
 
-def get_matrix(translation: Vec3, orientation: BlockOrientation, scale: float) -> Matrix:
+# def convert_matrix(m: Mat4) -> Matrix:
+#     matrix = Matrix(m)
+#     matrix.transpose()
+#     return MATRIX @ matrix @ MATRIX
+
+# def convert_matrix(m: Mat4) -> Matrix:
+#     return MATRIX @ Matrix(m) @ MATRIX
+
+def get_matrix(translation: Vec3, orientation: BlockOrientation) -> Matrix:
     uv = orientation.up.vector()
 
     bv = neg3(orientation.forward.vector())
@@ -589,12 +613,7 @@ def get_matrix(translation: Vec3, orientation: BlockOrientation, scale: float) -
     uv = cross(bv, rv)
     tv = translation
 
-    matrix = convert_matrix((
-        (*swap_yz(rv), 0),
-        (*swap_yz(uv), 0),
-        (*swap_yz(bv), 0),
-        (*swap_yz(tv), 1),
-    ))
+    matrix = YZ_MATRIX @ Matrix(((*rv, 0), (*uv, 0), (*bv, 0), (*tv, 1))).transposed() @ YZ_MATRIX
 
     return matrix
 
@@ -949,7 +968,7 @@ def create_texture(event: TextureEvent, dirname: str) -> bpy.types.Image:
                 break
         try:
             image = bpy.data.images.load(path, check_existing=True)
-            image.colorspace_settings.is_data = True
+            image.colorspace_settings.is_data = True # type: ignore[assignment]
             return image
         except:
             pass
@@ -1099,7 +1118,7 @@ def create_material(data: Data, event: MaterialEvent) -> bpy.types.Material:
     return material
 
 def get_variant_key(event: MaterialEvent) -> VariantKey:
-    color_metal_id = event.textures.get(TextureKind.ColorMetal)
+    color_metal_id  = event.textures.get(TextureKind.ColorMetal)
     normal_gloss_id = event.textures.get(TextureKind.NormalGloss)
     add_maps_id     = event.textures.get(TextureKind.AddMaps)
     alpha_mask_id   = event.textures.get(TextureKind.AlphaMask)
@@ -1152,9 +1171,9 @@ def create_model(data: Data, event: ModelEvent, overrides: dict[int, int], color
 
     return obj
 
-def set_entity_position(obj: bpy.types.Object, event: EntityEvent):
+def set_entity_position(data: Data, obj: bpy.types.Object, event: EntityEvent):
     if event.lmatrix is not None:
-        matrix = MATRIX @ Matrix(event.lmatrix) @ MATRIX
+        matrix = YZ_MATRIX @ Matrix(event.lmatrix) @ YZ_MATRIX
         matrix.transpose()
         pos, rot, scale = matrix.decompose()
 
@@ -1162,28 +1181,34 @@ def set_entity_position(obj: bpy.types.Object, event: EntityEvent):
         obj.rotation_quaternion = rot
         obj.scale = scale
     elif event.wmatrix is not None:
-        obj.matrix_world = matrix = convert_matrix(event.wmatrix)
+        obj.matrix_world = data.view_matrix @ Matrix(event.wmatrix).transposed() @ YZ_MATRIX
 
 def create_entity(data: Data, event: EntityEvent) -> bpy.types.Object | None:
-    if event.model is not None:
-        obj = create_model(data, data.models[event.model], {}, event.color)
-    else:
-        obj = bpy.data.objects.new(f'nSEr EM', None)
-        data.collection_entities.objects.link(obj)
-    
+    parent = None
+    overrides = dict[int, int]()
     if event.parent is not None:
-        parent = data.entities2.get(event.parent, None)
+        parent = data.entities.get(event.parent, None)
+        overrides |= data.overrides.get(event.parent, {})
         if parent is None:
             print(f'Parent {event.parent} not found')
             return None
         
+    data.overrides[event.id] = overrides
+
+    if event.model is not None:
+        obj = create_model(data, data.models[event.model], overrides, event.color)
+    else:
+        obj = bpy.data.objects.new(f'nSEr EE', None)
+        data.collection_entities.objects.link(obj)
+    
+    if parent is not None:
         obj.parent = parent
         obj.name = f'nSEr PM {event.id} {event.name}'
     else:
         obj.name = f'nSEr EM {event.id} {event.name}'
 
     obj.rotation_mode = 'QUATERNION'
-    set_entity_position(obj, event)
+    set_entity_position(data, obj, event)
     
     if event.color is not None:
         obj.color = event.color + (1.0,)
@@ -1205,40 +1230,58 @@ def update_entity(data: Data, event: EntityEvent) -> None:
     if event.remove:
         print('Removing entity', event.id)
 
-    if event.show is not None:
-        print('Change visibility', obj.name, event.show)
+    change = event.remove or event.show is not None
+    show = event.remove or event.show
+
+    if change:
+        print('Change visibility', obj.name, show)
         obj.keyframe_insert('hide_render', frame=data.frame-1)
-        obj.hide_viewport = not event.show
-        obj.hide_render = not event.show
+        obj.hide_viewport = not show
+        obj.hide_render = not show
         obj.keyframe_insert('hide_render', frame=data.frame)
 
     if event.lmatrix is not None or event.wmatrix is not None:
         obj.keyframe_insert('location', frame=data.frame-1)
         obj.keyframe_insert('rotation_quaternion', frame=data.frame-1)
         obj.keyframe_insert('scale', frame=data.frame-1)
-        set_entity_position(obj, event)
+        set_entity_position(data, obj, event)
         obj.keyframe_insert('location', frame=data.frame)
         obj.keyframe_insert('rotation_quaternion', frame=data.frame)
         obj.keyframe_insert('scale', frame=data.frame)
 
-def create_entity_blocks(data: Data, event: EntityBlocksEvent) -> None:
-    if event.id not in data.entities:
-        return
-    parent = data.entities[event.id]
-    for block in event.blocks:
-        if block.model is not None:
-            overrides = dict((o.src_id, o.dst_id) for o in block.overrides)
-            hb, sb, vb = block.color
-            color = (hb / 255.0, (sb / 127.5) - 1.0, (vb / 127.5) - 1.0)
-            obj = create_model(data, data.models[block.model], overrides, color)
-            obj.name = block.props.get(PropertyType.Name, f'nSEr BM {event.id} {block.position}')
-            obj.parent = parent
-            obj.matrix_local = get_matrix(block.translation, block.orientation, event.scale)
+def create_block(data: Data, event: BlockEvent) -> bpy.types.Object:
+    if event.model is not None:
+        overrides = dict((o.src_id, o.dst_id) for o in event.overrides)
+        hb, sb, vb = event.color
+        color = (hb / 255.0, (sb / 127.5) - 1.0, (vb / 127.5) - 1.0)
+        obj = create_model(data, data.models[event.model], overrides, color)
+    else:
+        obj = bpy.data.objects.new(f'nSEr BE {event.id} {event.position}', None)
+        data.collection_entities.objects.link(obj)
 
-            if block.entity is not None:
-                data.entities2[block.entity] = obj
+    obj.parent = data.entities[event.parent]
+    obj.matrix_local = get_matrix(event.translation, event.orientation)
+    
+    return obj
 
-LIGHT_MATRIX = Matrix.Rotation(-math.pi / 2, 4, 'X')
+def update_block(data: Data, event: BlockEvent) -> None:
+    obj = data.entities[event.id]
+
+    if event.remove:
+        print('Removing block', event.id)
+
+    if event.remove:
+        obj.keyframe_insert('hide_render', frame=data.frame-1)
+        obj.hide_viewport = True
+        obj.hide_render = True
+        obj.keyframe_insert('hide_render', frame=data.frame)
+
+LIGHT_YZ_MATRIX = Matrix((
+    (1,  0, 0, 0),
+    (0, -1, 0, 0),
+    (0,  0, 1, 0),
+    (0,  0, 0, 1),
+))
 
 def create_light(data: Data, event: LightEvent) -> bpy.types.Object:
     # print(f'Create light {event.id}')
@@ -1263,20 +1306,70 @@ def create_light(data: Data, event: LightEvent) -> bpy.types.Object:
     obj = bpy.data.objects.new(name=f'nSEr Light {event.id}', object_data=light)
     data.collection_lights.objects.link(obj)
     obj.rotation_mode = 'QUATERNION'
-    obj.matrix_world = convert_matrix(event.matrix) @ LIGHT_MATRIX
+    obj.matrix_world = data.view_matrix @ Matrix(event.matrix).transposed() @ LIGHT_YZ_MATRIX
 
     return obj
 
-def update_light(data: Data, event: LightEvent):
+def update_light(data: Data, event: LightEvent) -> None:
     # print(f'Updating light {event.id}')
     obj = data.lights[event.id]
     obj.keyframe_insert('location', frame=data.frame-1)
     obj.keyframe_insert('rotation_quaternion', frame=data.frame-1)
     obj.keyframe_insert('scale', frame=data.frame-1)
-    obj.matrix_world = convert_matrix(event.matrix) @ LIGHT_MATRIX
+    obj.matrix_world = data.view_matrix @ Matrix(event.matrix).transposed() @ LIGHT_YZ_MATRIX
     obj.keyframe_insert('location', frame=data.frame)
     obj.keyframe_insert('rotation_quaternion', frame=data.frame)
     obj.keyframe_insert('scale', frame=data.frame)
+
+def handle_event(data: Data, event: Event, dirname: str):
+    match event:
+        case AdvanceEvent():
+            # print(f'Advance delta={event.delta}')
+            data.frame += round(event.delta * FPS)
+            print(f'Frame {data.frame}\u001b[F')
+        case TextureEvent():
+            # print(f'Texture id={event.id} type={event.ty} name={event.name}')
+            texture = create_texture(event, dirname)
+            data.textures[event.id] = texture
+            
+        case MaterialEvent():
+            # print(f'Material id={event.id} name={event.name} render={event.render_mode} textures={event.textures}')
+            data.materials[event.id] = event
+
+        case ModelEvent():
+            # print(f'Model id={event.id} name={event.name} vertices={len(event.vertices)} normals={len(event.normals)} tex_coords={len(event.tex_coords)} indices={len(event.indices)} meshes={len(event.meshes)}')
+            mesh = create_mesh(event)
+            data.meshes[event.id] = mesh
+            data.models[event.id] = event
+
+        case EntityEvent():
+            # print(f'Entity id={event.id} entity={event.entity} name={event.name} model={event.model} color={event.color} preview={event.preview} show={event.show} parent={event.parent} wmatrix={event.wmatrix is not None} lmatrix={event.lmatrix is not None}')
+            if event.id in data.entities:
+                update_entity(data, event)
+            else:
+                if not event.preview: # TODO: Make configurable
+                    entity = create_entity(data, event)
+                    if entity is not None:
+                        data.entities[event.id] = entity
+
+        case BlockEvent():
+            # print(f'Block id={event.id} position={event.position} model={event.model} color={event.color} translation={event.translation} orientation={event.orientation} entity={event.entity}')
+            if event.id in data.entities:
+                update_block(data, event)
+            else:
+                data.entities[event.id] = create_block(data, event)
+
+        # case EntityBlocksEvent():
+        #     print(f'EntityBlocks id={event.id} scale={event.scale} blocks={len(event.blocks)}')
+        #     create_entity_blocks(data, event)
+
+        case LightEvent():
+            # print(f'Light id={event.id} color={event.color} cone={event.cone}')
+            if event.id in data.lights:
+                update_light(data, event)
+            else:
+                obj = create_light(data, event)
+                data.lights[event.id] = obj
 
 def import_semodel(model_path: str, context: bpy.types.Context):
     print('Importing semodel')
@@ -1286,85 +1379,67 @@ def import_semodel(model_path: str, context: bpy.types.Context):
         raise ValueError('No scene')
     
     dirname = os.path.dirname(os.path.abspath(model_path))
-    data = Data(scene.collection, get_setex())
+
+    wm = bpy.context.window_manager
 
     with open(model_path, 'rb') as f:
         r = BinReader(f)
         assert r.raw(4) == b'nSEr' # magic
-        r.raw(2) # reserved
-        version = r.u16()
-        if version != 2:
-            raise ValueError(f'Unsupported version {version}')
+        major = r.u16()
+        minor = r.u16()
+        if major != 1:
+            raise ValueError(f'Unsupported version {major}')
+        print(f'Importing semodel version {major}.{minor}')
         r.raw(4) # reserved
 
         header = r.properties()
+        anchor = header.get(PropertyTypes.MatrixD, Mat4_Identity)
         print(header)
 
-        for event in r.events():
-            match event:
-                case AdvanceEvent():
-                    # print(f'Advance delta={event.delta}')
-                    data.frame += round(event.delta * FPS)
-                    print(f'Frame {data.frame}\u001b[F')
-                case TextureEvent():
-                    print(f'Texture id={event.id} type={event.ty} name={event.name}')
-                    texture = create_texture(event, dirname)
-                    data.textures[event.id] = texture
-                    
-                case MaterialEvent():
-                    print(f'Material id={event.id} name={event.name} render={event.render_mode} textures={event.textures}')
-                    data.materials[event.id] = event
+        data = Data(scene.collection, get_setex(), view_matrix=Matrix(anchor).transposed())
 
-                case ModelEvent():
-                    print(f'Model id={event.id} name={event.name} vertices={len(event.vertices)} normals={len(event.normals)} tex_coords={len(event.tex_coords)} indices={len(event.indices)} meshes={len(event.meshes)}')
-                    mesh = create_mesh(event)
-                    data.meshes[event.id] = mesh
-                    data.models[event.id] = event
+        with ProgressReport(wm) as progress: # type: ignore[context-manager]
+            with ProgressReportSubstep(progress, r.length(), 'Importing') as substep: # type: ignore[context-manager]
+                last = time.time()
+                last_pos = r.tell()
 
-                case EntityEvent():
-                    # print(f'Entity id={event.id} entity={event.entity} name={event.name} model={event.model} color={event.color} preview={event.preview} show={event.show} parent={event.parent} wmatrix={event.wmatrix is not None} lmatrix={event.lmatrix is not None}')
-                    if event.id in data.entities:
-                        update_entity(data, event)
-                    else:
-                        if not event.preview: # TODO: Make configurable
-                            entity = create_entity(data, event)
-                            if entity is not None:
-                                data.entities[event.id] = entity
-                                data.entities2[event.entity] = entity
+                for event in r.events():
+                    if time.time() - last > 1.0:
+                        pos = r.tell()
+                        substep.step(nbr=pos - last_pos)
+                        last_pos = pos
+                        # bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
+                        last = time.time()
+                    handle_event(data, event, dirname)
 
-                case EntityBlocksEvent():
-                    print(f'EntityBlocks id={event.id} scale={event.scale} blocks={len(event.blocks)}')
-                    create_entity_blocks(data, event)
+            with ProgressReportSubstep(progress, len(data.entities), 'Cleaning up') as substep: # type: ignore[context-manager]
+                last = time.time()
+                count = 0
 
-                case LightEvent():
-                    # print(f'Light id={event.id} color={event.color} cone={event.cone}')
-                    if event.id in data.lights:
-                        update_light(data, event)
-                    else:
-                        obj = create_light(data, event)
-                        data.lights[event.id] = obj
+                for obj in data.entities.values():
+                    if time.time() - last > 1.0:
+                        substep.step(nbr=count)
+                        count = 0
+                        # bpy.ops.wm.redraw_timer(type='DRAW_WIN_SWAP', iterations=1)
+                        last = time.time()
+                    count += 1
+                    if not len(obj.children) and not obj.data:
+                        bpy.data.objects.remove(obj, do_unlink=True)
 
-                case RemoveEvent():
-                    pass
+            print()
+            print('Done')
 
-        print('Cleaning up')
-
-        for obj in data.entities.values():
-            if not len(obj.children) and not obj.data:
-                bpy.data.objects.remove(obj, do_unlink=True)
-
-        print('Done')
-
-class ImportSEModel(bpy.types.Operator, bpx.io_utils.ImportHelper):
+class ImportSEModel(bpy.types.Operator, bpx.io_utils.ImportHelper): # type: ignore[override]
     """Import a .semodel file generated by Never-SErender"""
     bl_idname = 'import_scene.semodel'
     bl_label = 'Import semodel'
     bl_options = {'REGISTER', 'UNDO'}
 
-    def invoke(self, context: bpy.types.Context, event: bpy.types.Event):
-        # The original script
+    def invoke(self, context: bpy.types.Context, event: bpy.types.Event): # type: ignore[override]
         print('Importing semodel')
-        return bpx.io_utils.ImportHelper.invoke_popup(self, context)
+        bpx.io_utils.ImportHelper.invoke_popup(self, context)
+
+        return {'RUNNING_MODAL'}
 
     def execute(self, context: bpy.types.Context): # type: ignore
         self.filepath: str

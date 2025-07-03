@@ -4,10 +4,12 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading;
+using NeverSerender.Changes;
 using NeverSerender.Output;
 using NeverSerender.Snapshot;
 using Sandbox.Game.Entities;
 using Sandbox.Game.World;
+using VRage.Game.Entity;
 using VRage.Utils;
 
 namespace NeverSerender
@@ -20,19 +22,23 @@ namespace NeverSerender
         private readonly Stream logFile;
         private readonly MiniLog mainLog;
         private readonly Stream outFile;
-        private readonly ExportSettings settings;
+        private readonly ExporterSettings settings;
         private readonly MiniLog threadLog;
 
         private readonly EntityChangeTracker trackedEntities;
         private readonly EntityChangeTracker trackedEntitiesDelayed;
         private readonly Dictionary<long, GridChangeTracker> trackedGrids = new Dictionary<long, GridChangeTracker>();
-        private readonly SpaceWriter writer;
+        private readonly SpaceModelWriter writer;
 
-        public Capture(ExportSettings settings)
+        public Capture(ExporterSettings settings)
         {
             this.settings = settings;
 
             MyLog.Default.WriteLineAndConsole("NeverSerender Capture starting");
+
+            var logDir = Path.GetDirectoryName(settings.LogPath);
+            if (logDir != null)
+                Directory.CreateDirectory(logDir);
 
             logFile = File.OpenWrite(settings.LogPath);
             logFile.SetLength(0);
@@ -41,11 +47,15 @@ namespace NeverSerender
             mainLog = rootLog.Named("Capture");
             threadLog = mainLog.Named("Thread");
 
+            var outDir = Path.GetDirectoryName(settings.OutPath);
+            if (outDir != null)
+                Directory.CreateDirectory(outDir);
+
             outFile = new BufferedStream(File.OpenWrite(settings.OutPath));
             outFile.SetLength(0);
 
-            writer = new SpaceWriter(outFile, mainLog.Named("SpaceWriter"));
-            writer.Header(MySession.Static.Name, MySession.Static.LocalCharacter.Name);
+            writer = new SpaceModelWriter(outFile, mainLog.Named("SpaceWriter"));
+            writer.Header(MySession.Static.Name, MySession.Static.LocalCharacter.Name, settings.ViewMatrix);
 
             exporter = new Exporter(mainLog.Named("Exporter"), writer);
 
@@ -146,27 +156,19 @@ namespace NeverSerender
             //
             // mainLog.WriteLine($"transforms {transforms?.Length} bones {bones?.Length} mapping {mapping?.Length}");
 
-            foreach (var entity in MyEntities.GetEntities())
+            if (settings.ExportEntityIds == null)
             {
-                // mainLog.WriteLine(
-                //     $"Entity Name={entity.Name} DisplayName={entity.DisplayName} IsPreview={entity.IsPreview}");
-
-                trackedEntities.Add(entity);
-
-                if (!(entity is MyCubeGrid grid)) continue;
-
-                // mainLog.WriteLine(
-                //     $"Grid EntityId={grid.EntityId} DisplayName={grid.DisplayName} BlocksCount={grid.BlocksCount}");
-
-                if (!trackedGrids.TryGetValue(grid.EntityId, out var tracker))
+                foreach (var entity in MyEntities.GetEntities())
+                    TrackEntity(entity, grids);
+            }
+            else
+            {
+                foreach (var entityId in settings.ExportEntityIds)
                 {
-                    tracker = new GridChangeTracker(trackedEntitiesDelayed, grid);
-                    trackedGrids.Add(grid.EntityId, tracker);
+                    var entity = MyEntities.GetEntityById(entityId);
+                    if (entity != null)
+                        TrackEntity(entity, grids);
                 }
-
-                var gridChanges = tracker.Next();
-                if (gridChanges.Blocks.Count > 0 || gridChanges.RemovedBlocks.Count > 0)
-                    grids.Add(gridChanges);
             }
 
             var lights = exporter.GetLights();
@@ -182,6 +184,32 @@ namespace NeverSerender
                 Lights = lights
             };
             exportQueue.Add(changes);
+        }
+
+        private void TrackEntity(MyEntity entity, List<GridSnapshot> grids)
+        {
+            // mainLog.WriteLine(
+            //     $"Entity Name={entity.Name} DisplayName={entity.DisplayName} IsPreview={entity.IsPreview}");
+
+            if (!settings.ExportNonGrids && !(entity is MyCubeGrid))
+                return;
+            
+            trackedEntities.Add(entity);
+
+            if (!(entity is MyCubeGrid grid)) return;
+
+            // mainLog.WriteLine(
+            //     $"Grid EntityId={grid.EntityId} DisplayName={grid.DisplayName} BlocksCount={grid.BlocksCount}");
+
+            if (!trackedGrids.TryGetValue(grid.EntityId, out var tracker))
+            {
+                tracker = new GridChangeTracker(trackedEntitiesDelayed, grid);
+                trackedGrids.Add(grid.EntityId, tracker);
+            }
+
+            var gridChanges = tracker.Next();
+            if (gridChanges.Blocks.Count > 0 || gridChanges.RemovedBlocks.Count > 0)
+                grids.Add(gridChanges);
         }
 
         public void Finish()

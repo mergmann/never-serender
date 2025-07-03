@@ -135,6 +135,13 @@ namespace NeverSerender.Output
             Write(vector.Y);
             Write(vector.Z);
         }
+        
+        public void Write(Vector3S vector)
+        {
+            Write(vector.X);
+            Write(vector.Y);
+            Write(vector.Z);
+        }
 
         public void Write(Vector3I vector)
         {
@@ -199,158 +206,183 @@ namespace NeverSerender.Output
 
         public void PropertyId(long value)
         {
-            Write((ushort)Property.Id);
+            Write((ushort)Output.PropertyId.Id);
             Write(value);
         }
 
         public void PropertyName(string value)
         {
-            Write((ushort)Property.Name);
+            Write((ushort)Output.PropertyId.Name);
             Write(value);
         }
 
         public void PropertyAuthor(string value)
         {
-            Write((ushort)Property.Author);
+            Write((ushort)Output.PropertyId.Author);
             Write(value);
         }
 
         public void PropertyPath(string value)
         {
-            Write((ushort)Property.Path);
+            Write((ushort)Output.PropertyId.Path);
             Write(value);
         }
 
         public void PropertyMatrix(Matrix value)
         {
-            Write((ushort)Property.Matrix);
+            Write((ushort)Output.PropertyId.Matrix);
             Write(value);
         }
 
         public void PropertyMatrixD(MatrixD value)
         {
-            Write((ushort)Property.MatrixD);
+            Write((ushort)Output.PropertyId.MatrixD);
             Write(value);
         }
 
         public void PropertyTextureType(TextureType value)
         {
-            Write((ushort)Property.TextureType);
+            Write((ushort)Output.PropertyId.TextureType);
             Write((byte)value);
         }
 
         public void PropertyVertices(Action<BinWriter> value)
         {
-            Write((ushort)Property.Vertices);
+            Write((ushort)Output.PropertyId.Vertices);
             WriteSized(value);
         }
 
         public void PropertyNormals(Action<BinWriter> value)
         {
-            Write((ushort)Property.Normals);
+            Write((ushort)Output.PropertyId.Normals);
             WriteSized(value);
         }
 
         public void PropertyTexCoords(Action<BinWriter> value)
         {
-            Write((ushort)Property.TexCoords);
+            Write((ushort)Output.PropertyId.TexCoords);
             WriteSized(value);
         }
 
         public void PropertyIndices(Action<BinWriter> value)
         {
-            Write((ushort)Property.Indices);
+            Write((ushort)Output.PropertyId.Indices);
             WriteSized(value);
         }
 
         public void PropertyMeshes(Action<BinWriter> value)
         {
-            Write((ushort)Property.Meshes);
+            Write((ushort)Output.PropertyId.Meshes);
             WriteSized(value);
         }
 
         public void PropertyMaterialOverrides(Action<BinWriter> value)
         {
-            Write((ushort)Property.MaterialOverrides);
+            Write((ushort)Output.PropertyId.MaterialOverrides);
             WriteSized(value);
         }
 
         public void PropertyModel(uint id)
         {
-            Write((ushort)Property.Model);
+            Write((ushort)Output.PropertyId.Model);
             Write(id);
         }
 
         public void PropertyColor(Vector3 value)
         {
-            Write((ushort)Property.Color);
+            Write((ushort)Output.PropertyId.Color);
+            Write(value);
+        }
+        
+        public void PropertyColorMask(Vector3UByte value)
+        {
+            Write((ushort)Output.PropertyId.ColorMask);
             Write(value);
         }
 
         public void PropertyDelta(float value)
         {
-            Write((ushort)Property.Delta);
+            Write((ushort)Output.PropertyId.Delta);
             Write(value);
         }
 
         public void PropertyCone(Vector2 cone)
         {
-            Write((ushort)Property.Cone);
+            Write((ushort)Output.PropertyId.Cone);
             Write(cone);
         }
 
         public void PropertyScale(float scale)
         {
-            Write((ushort)Property.Scale);
+            Write((ushort)Output.PropertyId.Scale);
             Write(scale);
         }
 
         public void PropertyRemove()
         {
-            Write((ushort)Property.Remove);
+            Write((ushort)Output.PropertyId.Remove);
         }
 
         public void PropertyPreview(bool value)
         {
-            Write((ushort)Property.Preview);
+            Write((ushort)Output.PropertyId.Preview);
             Write(value);
         }
 
-        public void PropertyParent(long value)
+        public void PropertyParent(uint value)
         {
-            Write((ushort)Property.Parent);
+            Write((ushort)Output.PropertyId.Parent);
             Write(value);
         }
 
         public void PropertyShow(bool value)
         {
-            Write((ushort)Property.Show);
+            Write((ushort)Output.PropertyId.Show);
             Write(value);
         }
-        
+
         public void PropertyRenderMode(RenderMode value)
         {
-            Write((ushort)Property.RenderMode);
+            Write((ushort)Output.PropertyId.RenderMode);
             Write((byte)value);
         }
 
         public void PropertyTexture(TextureKind kind, uint value)
         {
-            Write((ushort)Property.Texture);
+            Write((ushort)Output.PropertyId.Texture);
             Write((byte)kind);
             Write(value);
+        }
+        
+        public void PropertyVector3(Vector3 value)
+        {
+            Write((ushort)Output.PropertyId.Vector3);
+            Write(value);
+        }
+        
+        public void PropertyVector3S(Vector3S value)
+        {
+            Write((ushort)Output.PropertyId.Vector3S);
+            Write(value);
+        }
+        
+        public void PropertyOrientation(MatrixI orientation)
+        {
+            Write((ushort)Output.PropertyId.Orientation);
+            Write(orientation);
         }
 
         public void PropertyEnd()
         {
-            Write((ushort)Property.EndHeader);
+            Write((ushort)Output.PropertyId.EndHeader);
         }
 
 
-        public void Event(Event @event, Action<BinWriter> action = null)
+        public void Event(EventId eventId, uint id, Action<BinWriter> action = null)
         {
             Write((ushort)0xC080);
-            Write((ushort)@event);
+            Write((ushort)eventId);
+            Write(id);
             WriteSized(action);
         }
 

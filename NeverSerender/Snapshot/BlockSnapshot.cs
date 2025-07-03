@@ -1,3 +1,4 @@
+using NeverSerender.Tools;
 using Sandbox.Definitions;
 using Sandbox.Game.Entities.Cube;
 using VRageMath;
@@ -11,7 +12,7 @@ namespace NeverSerender.Snapshot
             block.GetLocalMatrix(out var localMatrix);
 
             EntityId = block.FatBlock?.EntityId;
-            Model = Util.GetActiveBlockModel(block, out var orientation);
+            Model = BlockTools.GetActiveBlockModel(block, out var orientation);
             Skin = block.SkinSubtypeId.String;
             Color = block.ColorMaskHSV;
             Position = block.Position;

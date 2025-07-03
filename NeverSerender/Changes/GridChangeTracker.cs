@@ -6,7 +6,7 @@ using Sandbox.Game.Entities;
 using Sandbox.Game.Entities.Cube;
 using VRageMath;
 
-namespace NeverSerender
+namespace NeverSerender.Changes
 {
     public class GridChangeTracker : IDisposable
     {
@@ -62,9 +62,8 @@ namespace NeverSerender
             lock (@lock)
             {
                 blocks[block.Position] = new BlockSnapshot(block);
+                block.FatBlock?.Subparts.Values.ForEach(trackedEntities.Add);
             }
-
-            block.FatBlock?.Subparts.Values.ForEach(trackedEntities.Add);
         }
 
         private void Remove(MySlimBlock block)

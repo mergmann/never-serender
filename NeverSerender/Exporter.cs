@@ -5,7 +5,9 @@ using System.Linq;
 using HarmonyLib;
 using NeverSerender.Output;
 using NeverSerender.Snapshot;
+using NeverSerender.Tools;
 using Sandbox.Definitions;
+using SpaceEngineers.Game.Entities.Blocks;
 using VRage.Game.Entity;
 using VRage.Game.Models;
 using VRage.Import;
@@ -25,16 +27,18 @@ namespace NeverSerender
             MyMeshDrawTechnique.DECAL,
             MyMeshDrawTechnique.DECAL_CUTOUT,
             MyMeshDrawTechnique.DECAL_NOPREMULT,
-            MyMeshDrawTechnique.GLASS,
+            MyMeshDrawTechnique.GLASS
         };
 
         private readonly Dictionary<string, MyModel> cubeModels = new Dictionary<string, MyModel>();
 
         private readonly MiniLog log;
-        private readonly MaterialLibrary materialLibrary = new MaterialLibrary();
+        private readonly MaterialOverrides materialOverrides = new MaterialOverrides();
 
         private readonly Dictionary<long, uint> trackedEntityIds = new Dictionary<long, uint>();
-        private readonly Dictionary<(uint, bool), uint> trackedLightIds = new Dictionary<(uint, bool), uint>();
+        private readonly Dictionary<(long, Vector3I), uint> trackedBlockIds = new Dictionary<(long, Vector3I), uint>();
+
+            private readonly Dictionary<(uint, bool), uint> trackedLightIds = new Dictionary<(uint, bool), uint>();
 
         private readonly Dictionary<uint, LightSnapshot> trackedLights = new Dictionary<uint, LightSnapshot>();
 
@@ -47,14 +51,14 @@ namespace NeverSerender
             trackedOverrides = new Dictionary<(string, string), uint?>();
 
         private readonly Dictionary<string, uint> trackedTextureIds = new Dictionary<string, uint>();
-        private readonly SpaceWriter writer;
+        private readonly SpaceModelWriter writer;
         private uint trackedEntityId = 1;
         private uint trackedLightId = 1;
         private uint trackedMaterialId = 1;
         private uint trackedModelId = 1;
         private uint trackedTextureId = 1;
 
-        public Exporter(MiniLog log, SpaceWriter writer)
+        public Exporter(MiniLog log, SpaceModelWriter writer)
         {
             this.log = log;
             this.writer = writer;
@@ -161,8 +165,24 @@ namespace NeverSerender
             uint? model = null;
             if (entity.Model != null)
                 model = ProcessModel(entity.Model);
-
-            writer.Entity(id, entity, model);
+            
+            var parent = entity.Parent.HasValue ? (uint?)trackedEntityIds[entity.Parent.Value] : null;
+            
+            var properties = new EntityProperties
+            {
+                EntityId = entity.EntityId,
+                Parent = parent,
+                Name = entity.Name,
+                Model = entity.Model,
+                Color = ColorTools.PackColorMask(entity.Color),
+                LocalMatrix = entity.LocalMatrix,
+                WorldMatrix = entity.WorldMatrix,
+                IsPreview = entity.IsPreview,
+                Show = entity.Show,
+                Remove = entity.Remove,
+            };
+            
+            writer.Entity(id, properties, model);
         }
 
         public void ExportGrid(GridSnapshot grid)
@@ -171,35 +191,38 @@ namespace NeverSerender
 
             var id = trackedEntityIds[grid.EntityId];
 
-            var blocks = grid.Blocks.Select(Block).ToList();
-            blocks.AddRange(grid.RemovedBlocks.Select(b => new BlockProperties
-            {
-                Remove = true,
-                Position = b
-            }));
-            writer.Grid(id, grid.Scale, blocks);
+            foreach (var block in grid.Blocks)
+                ExportBlock(grid.EntityId, block);
+
+            foreach (var position in grid.RemovedBlocks)
+                RemoveBlock(grid.EntityId, position);
         }
 
-        private BlockProperties Block(BlockSnapshot block)
+        private void ExportBlock(long gridId, BlockSnapshot block)
         {
+            if (!trackedBlockIds.TryGetValue((gridId, block.Position), out var id))
+            {
+                id = trackedEntityId++;
+                trackedBlockIds.Add((gridId, block.Position), id);
+            }
+            
             // log.WriteLine($"Process Block {slimBlock.BlockDefinition.Id}");
-
+            
+            if (block.EntityId.HasValue)
+                trackedEntityIds.Add(block.EntityId.Value, id);
+            
             var skin = block.Skin;
-            var colorOverride = materialLibrary.GetColorOverride(skin);
-
-            var color = colorOverride ?? block.Color;
-            var hue = (byte)MathHelper.Clamp(color.X * 255.0, 0.0, 255.0);
-            var sat = (byte)MathHelper.Clamp((color.Y + 1.0) * 127.5, 0.0, 255.0);
-            var val = (byte)MathHelper.Clamp((color.Z + 1.0) * 127.5, 0.0, 255.0);
+            var colorOverride = materialOverrides.GetColorOverride(skin);
 
             var properties = new BlockProperties
             {
                 EntityId = block.EntityId,
+                GridId = trackedEntityIds[gridId],
                 Name = $"{block.Definition.Id.SubtypeName}:{block.Position}",
-                Position = block.Position,
+                Position = new Vector3S(block.Position),
                 Translation = block.Translation,
                 Orientation = block.Orientation,
-                Color = new Vector3UByte(hue, sat, val)
+                Color = ColorTools.PackColorMask(colorOverride ?? block.Color),
             };
 
             var cubeDefinition = block.Definition;
@@ -210,19 +233,29 @@ namespace NeverSerender
             else if (cubeDefinition != null)
                 modelId = MergeMultiModel(block.Definition);
 
-            if (!modelId.HasValue) return properties;
+            if (modelId.HasValue)
+            {
+                properties.Model = modelId;
+                var modifiers = trackedModelMaterials[modelId.Value]
+                    .Select(m => new { id = trackedMaterialIds[m], mod = ProcessOverride(skin, m) })
+                    .Where(m => m.mod.HasValue)
+                    .Select(m => (m.id, m.mod.Value))
+                    .ToList();
 
-            properties.Model = modelId;
-            var modifiers = trackedModelMaterials[modelId.Value]
-                .Select(m => new { id = trackedMaterialIds[m], mod = ProcessOverride(skin, m) })
-                .Where(m => m.mod.HasValue)
-                .Select(m => (m.id, m.mod.Value))
-                .ToList();
+                if (modifiers.Count > 0)
+                    properties.Modifiers = modifiers;
+            }
 
-            if (modifiers.Count > 0)
-                properties.Modifiers = modifiers;
-
-            return properties;
+            writer.Block(id, properties);
+        }
+        
+        private void RemoveBlock(long gridId, Vector3I position)
+        {
+            if (!trackedBlockIds.TryGetValue((gridId, position), out var id))
+                return;
+            trackedBlockIds.Remove((gridId, position));
+            
+            writer.RemoveBlock(id, new Vector3S(position));
         }
 
         private uint MergeMultiModel(MyCubeBlockDefinition definition)
@@ -346,7 +379,8 @@ namespace NeverSerender
             foreach (var mesh in model.GetMeshList())
             {
                 var material = mesh.Material;
-                log.WriteLine($"ShowMat ({material.Name}) DrawTechnique={material.DrawTechnique} GlassCW={material.GlassCW} GlassCCW={material.GlassCCW} GlassSmooth={material.GlassSmooth}");
+                log.WriteLine(
+                    $"ShowMat ({material.Name}) DrawTechnique={material.DrawTechnique} GlassCW={material.GlassCW} GlassCCW={material.GlassCCW} GlassSmooth={material.GlassSmooth}");
                 if (!SupportedDrawModes.Contains(material.DrawTechnique))
                     continue;
 
@@ -398,7 +432,7 @@ namespace NeverSerender
             if (trackedOverrides.TryGetValue(key, out var cachedId))
                 return cachedId;
 
-            var modifier = materialLibrary.GetModifier(skin, material);
+            var modifier = materialOverrides.GetModifier(skin, material);
             if (modifier == null)
             {
                 trackedOverrides.Add(key, null);
@@ -430,7 +464,8 @@ namespace NeverSerender
             trackedMaterialIds.Add(material.Name, id);
 
             log.WriteLine($"Process Material {material.Name}");
-            log.WriteLine($"DrawTechnique={material.DrawTechnique} GlassCW={material.GlassCW} GlassCCW={material.GlassCCW} GlassSmooth={material.GlassSmooth}");
+            log.WriteLine(
+                $"DrawTechnique={material.DrawTechnique} GlassCW={material.GlassCW} GlassCCW={material.GlassCCW} GlassSmooth={material.GlassSmooth}");
 
             // var textures = MaterialLibrary.GetTextures(log.Named("Materials"), material);
 
@@ -448,7 +483,6 @@ namespace NeverSerender
         {
             var textures = new Dictionary<TextureKind, uint>();
             foreach (var pair in names.Where(pair => !string.IsNullOrEmpty(pair.Key)))
-            {
                 switch (pair.Key)
                 {
                     case "ColorMetalTexture":
@@ -464,7 +498,7 @@ namespace NeverSerender
                         textures[TextureKind.AlphaMask] = ProcessTexture(pair.Value);
                         break;
                 }
-            }
+
             return textures;
         }
 

@@ -6,12 +6,12 @@ using VRageRender.Messages;
 
 namespace NeverSerender
 {
-    public class MaterialLibrary
+    public class MaterialOverrides
     {
         private readonly Dictionary<string, Vector3> colorOverrides;
         private readonly Dictionary<string, Dictionary<string, Dictionary<string, string>>> modifiers;
 
-        public MaterialLibrary()
+        public MaterialOverrides()
         {
             modifiers = new Dictionary<string, Dictionary<string, Dictionary<string, string>>>();
             colorOverrides = new Dictionary<string, Vector3>();

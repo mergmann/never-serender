@@ -5,6 +5,6 @@ namespace NeverSerender.Output
         ColorMetal,
         NormalGloss,
         AddMaps,
-        AlphaMask,
+        AlphaMask
     }
 }
