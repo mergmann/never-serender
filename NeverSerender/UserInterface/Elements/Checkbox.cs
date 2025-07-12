@@ -1,4 +1,3 @@
-using System;
 using System.Collections.Generic;
 using NeverSerender.UserInterface.Tools;
 using Sandbox.Graphics.GUI;
@@ -7,6 +6,9 @@ namespace NeverSerender.UserInterface.Elements
 {
     internal class CheckboxElement : IElement<bool>
     {
+        public string Description { get; set; }
+        public string Label { get; set; }
+
         public List<Control> GetControls(string name, ElementProperty<bool> property, bool enabled)
         {
             var label = UiTools.GetLabelOrDefault(name, Label);
@@ -25,8 +27,5 @@ namespace NeverSerender.UserInterface.Elements
                 new Control(checkbox)
             };
         }
-        
-        public string Description { get; set; }
-        public string Label { get; set; }
     }
 }

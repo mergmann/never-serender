@@ -1,7 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using NeverSerender.UserInterface.Tools;
-using Sandbox.Graphics.GUI;
 
 namespace NeverSerender.UserInterface.Elements.Attributes
 {
@@ -16,11 +14,14 @@ namespace NeverSerender.UserInterface.Elements.Attributes
             this.description = description;
         }
 
-        public IElement<T> GetElement<T>() => (IElement<T>)new TextboxElement
+        public IElement<T> GetElement<T>()
         {
-            Description = description,
-            Label = label,
-        };
+            return (IElement<T>)new TextboxElement
+            {
+                Description = description,
+                Label = label
+            };
+        }
 
         public List<Type> SupportedTypes { get; } = new List<Type> { typeof(string) };
     }

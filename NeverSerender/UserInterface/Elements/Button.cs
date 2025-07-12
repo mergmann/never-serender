@@ -9,6 +9,9 @@ namespace NeverSerender.UserInterface.Elements
 {
     internal class ButtonElement : IElement<Action>
     {
+        public string Description { get; set; }
+        public string Label { get; set; }
+
         public List<Control> GetControls(string name, ElementProperty<Action> property, bool enabled)
         {
             var label = UiTools.GetLabelOrDefault(name, Label);
@@ -22,8 +25,5 @@ namespace NeverSerender.UserInterface.Elements
                 new Control(button, originAlign: MyGuiDrawAlignEnum.HORISONTAL_LEFT_AND_VERTICAL_TOP)
             };
         }
-        
-        public string Description { get; set; }
-        public string Label { get; set; }
     }
 }

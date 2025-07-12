@@ -228,6 +228,7 @@ class BlockEvent(Event):
         return cls(
             id,
             props,
+
             props.pop(PropertyTypes.Parent, -1),
             props.pop(PropertyTypes.Vector3S, Vec3i_Zero),
             props.pop(PropertyTypes.Vector3, Vec3_Zero),
@@ -255,12 +256,20 @@ class AdvanceEvent(Event):
         return cls(
             id,
             props,
+
             props.pop(PropertyTypes.Delta, 0.0)
         )
 
 @dataclass
-class LightEvent(Event):
-    matrix: Mat4
+class ObjectEvent(Event):
+    lmatrix: Mat4 | None
+    wmatrix: Mat4 | None
+    parent:  int | None
+    show:    bool | None
+    remove:  bool
+
+@dataclass
+class LightEvent(ObjectEvent):
     color:  Vec3
     cone:   Vec2 | None
 
@@ -269,39 +278,42 @@ class LightEvent(Event):
         return cls(
             id,
             props,
-            props.pop(PropertyTypes.MatrixD, Mat4_Identity),
+            
+            props.pop(PropertyTypes.Matrix, None),
+            props.pop(PropertyTypes.MatrixD, None),
+            props.pop(PropertyTypes.Parent, None),
+            props.get(PropertyTypes.Show, None),
+            PropertyTypes.Remove in props,
+
             props.pop(PropertyTypes.Color, Color_Default),
             props.pop(PropertyTypes.Cone, None),
         )
 
 @dataclass
-class EntityEvent(Event):
+class EntityEvent(ObjectEvent):
     entity:  int
-    parent:  int | None
     name:    str | None
-    lmatrix: Mat4 | None
-    wmatrix: Mat4 | None
     model:   int | None
     color:   Vec3 | None
     preview: bool | None
-    show:    bool | None
-    remove:  bool
 
     @classmethod
     def read(cls, id: int, props: Properties, r: BinReader) -> Self:
         return cls(
             id,
             props,
-            props.pop(PropertyTypes.Id, -1),
-            props.pop(PropertyTypes.Parent, None),
-            props.pop(PropertyTypes.Name, None),
+
             props.pop(PropertyTypes.Matrix, None),
             props.pop(PropertyTypes.MatrixD, None),
+            props.pop(PropertyTypes.Parent, None),
+            props.get(PropertyTypes.Show, None),
+            PropertyTypes.Remove in props,
+
+            props.pop(PropertyTypes.Id, -1),
+            props.pop(PropertyTypes.Name, None),
             props.pop(PropertyTypes.Model, None),
             props.get(PropertyTypes.ColorMask, None),
             props.get(PropertyTypes.Preview, None),
-            props.get(PropertyTypes.Show, None),
-            PropertyTypes.Remove in props,
         )
 
 @dataclass
@@ -318,6 +330,7 @@ class ModelEvent(Event):
         return cls(
             id,
             props,
+
             props.pop(PropertyTypes.Name, 'unknown'),
             props.pop(PropertyTypes.Vertices, []),
             props.pop(PropertyTypes.Normals, []),
@@ -337,6 +350,7 @@ class MaterialEvent(Event):
         return cls(
             id,
             props,
+
             props.pop(PropertyTypes.Name, 'unknown'),
             props.pop(PropertyTypes.RenderMode, RenderMode.Normal),
             dict(props.pop_all(PropertyTypes.Texture)),
@@ -364,6 +378,7 @@ class TextureEvent(Event):
         return cls(
             id,
             props,
+
             props.pop(PropertyTypes.TextureType, TextureType.Auto),
             props.pop(PropertyTypes.Name, 'unknown'),
             props.pop(PropertyTypes.Path, None),
@@ -1180,7 +1195,8 @@ def create_model(data: Data, event: ModelEvent, overrides: dict[int, int], color
 
     return obj
 
-def set_entity_position(data: Data, obj: bpy.types.Object, event: EntityEvent):
+def set_object_position(data: Data, obj: bpy.types.Object, event: ObjectEvent):
+    obj.rotation_mode = 'QUATERNION'
     if event.lmatrix is not None:
         matrix = YZ_MATRIX @ Matrix(event.lmatrix) @ YZ_MATRIX
         matrix.transpose()
@@ -1191,6 +1207,29 @@ def set_entity_position(data: Data, obj: bpy.types.Object, event: EntityEvent):
         obj.scale = scale
     elif event.wmatrix is not None:
         obj.matrix_world = data.view_matrix @ Matrix(event.wmatrix).transposed() @ YZ_MATRIX
+
+def update_object(data: Data, obj: bpy.types.Object, event: ObjectEvent):
+    if event.remove:
+        print('Removing entity', event.id)
+
+    change = event.remove or event.show is not None
+    show = event.remove or event.show
+
+    if change:
+        print('Change visibility', obj.name, show)
+        obj.keyframe_insert('hide_render', frame=data.frame-1)
+        obj.hide_viewport = not show
+        obj.hide_render = not show
+        obj.keyframe_insert('hide_render', frame=data.frame)
+
+    if event.lmatrix is not None or event.wmatrix is not None:
+        obj.keyframe_insert('location', frame=data.frame-1)
+        obj.keyframe_insert('rotation_quaternion', frame=data.frame-1)
+        obj.keyframe_insert('scale', frame=data.frame-1)
+        set_object_position(data, obj, event)
+        obj.keyframe_insert('location', frame=data.frame)
+        obj.keyframe_insert('rotation_quaternion', frame=data.frame)
+        obj.keyframe_insert('scale', frame=data.frame)
 
 def create_entity(data: Data, event: EntityEvent) -> bpy.types.Object | None:
     parent = None
@@ -1223,8 +1262,7 @@ def create_entity(data: Data, event: EntityEvent) -> bpy.types.Object | None:
     else:
         obj.name = f'nSEr EM {event.id} {event.name}'
 
-    obj.rotation_mode = 'QUATERNION'
-    set_entity_position(data, obj, event)
+    set_object_position(data, obj, event)
     
     if event.color is not None:
         obj.color = event.color + (1.0,)
@@ -1240,31 +1278,9 @@ def create_entity(data: Data, event: EntityEvent) -> bpy.types.Object | None:
     return obj
 
 def update_entity(data: Data, event: EntityEvent) -> None:
-    # print(f'Updating entity {event.id}, wmatrix={event.wmatrix is not None}, lmatrix={event.lmatrix is not None}')
     obj = data.entities[event.id]
-
-    if event.remove:
-        print('Removing entity', event.id)
-
-    change = event.remove or event.show is not None
-    show = event.remove or event.show
-
-    if change:
-        print('Change visibility', obj.name, show)
-        obj.keyframe_insert('hide_render', frame=data.frame-1)
-        obj.hide_viewport = not show
-        obj.hide_render = not show
-        obj.keyframe_insert('hide_render', frame=data.frame)
-
-    if event.lmatrix is not None or event.wmatrix is not None:
-        obj.keyframe_insert('location', frame=data.frame-1)
-        obj.keyframe_insert('rotation_quaternion', frame=data.frame-1)
-        obj.keyframe_insert('scale', frame=data.frame-1)
-        set_entity_position(data, obj, event)
-        obj.keyframe_insert('location', frame=data.frame)
-        obj.keyframe_insert('rotation_quaternion', frame=data.frame)
-        obj.keyframe_insert('scale', frame=data.frame)
-
+    update_object(data, obj, event)
+    
 def create_block(data: Data, event: BlockEvent) -> bpy.types.Object:
     if event.model is not None:
         overrides = dict((o.src_id, o.dst_id) for o in event.overrides)
@@ -1321,21 +1337,13 @@ def create_light(data: Data, event: LightEvent) -> bpy.types.Object:
 
     obj = bpy.data.objects.new(name=f'nSEr Light {event.id}', object_data=light)
     data.collection_lights.objects.link(obj)
-    obj.rotation_mode = 'QUATERNION'
-    obj.matrix_world = data.view_matrix @ Matrix(event.matrix).transposed() @ LIGHT_YZ_MATRIX
-
+    set_object_position(data, obj, event)
+    
     return obj
 
 def update_light(data: Data, event: LightEvent) -> None:
-    # print(f'Updating light {event.id}')
     obj = data.lights[event.id]
-    obj.keyframe_insert('location', frame=data.frame-1)
-    obj.keyframe_insert('rotation_quaternion', frame=data.frame-1)
-    obj.keyframe_insert('scale', frame=data.frame-1)
-    obj.matrix_world = data.view_matrix @ Matrix(event.matrix).transposed() @ LIGHT_YZ_MATRIX
-    obj.keyframe_insert('location', frame=data.frame)
-    obj.keyframe_insert('rotation_quaternion', frame=data.frame)
-    obj.keyframe_insert('scale', frame=data.frame)
+    update_object(data, obj, event)
 
 def handle_event(data: Data, event: Event, dirname: str):
     match event:

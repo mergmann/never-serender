@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Text;
 using Sandbox.Definitions;
 using Sandbox.Game.Entities.Cube;
 using VRageMath;

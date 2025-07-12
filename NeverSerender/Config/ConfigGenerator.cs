@@ -3,13 +3,10 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Linq.Expressions;
 using System.Reflection;
-using System.Runtime.Remoting.Channels;
-using Microsoft.CodeAnalysis.CSharp.Syntax;
 using NeverSerender.UserInterface;
 using NeverSerender.UserInterface.Elements;
 using NeverSerender.UserInterface.Elements.Attributes;
 using NeverSerender.UserInterface.Layouts;
-using NeverSerender.UserInterface.Tools;
 using Sandbox.Graphics.GUI;
 using VRage.Utils;
 
@@ -17,13 +14,14 @@ namespace NeverSerender.Config
 {
     internal class ConfigGenerator
     {
-        private ElementList elements;
         private List<List<Control>> controls;
 
         /// <summary>
-        /// This flag is used to prevent UI actions from sending changes to itself
+        ///     This flag is used to prevent UI actions from sending changes to itself
         /// </summary>
-        private bool disableNotify = false;
+        private bool disableNotify;
+
+        private ElementList elements;
 
         public ConfigGenerator(IConfig config)
         {
@@ -38,10 +36,15 @@ namespace NeverSerender.Config
 
         public Layout ActiveLayout { get; private set; }
 
-        private static bool ValidateType(Type type, List<Type> typesList) =>
-            typesList.Any(t => t.IsAssignableFrom(type));
+        private static bool ValidateType(Type type, List<Type> typesList)
+        {
+            return typesList.Any(t => t.IsAssignableFrom(type));
+        }
 
-        public bool Update() => elements.DetectVisibilityChanges();
+        public bool Update()
+        {
+            return elements.DetectVisibilityChanges();
+        }
 
         public List<MyGuiControlBase> RecreateControls()
         {
@@ -51,12 +54,20 @@ namespace NeverSerender.Config
             return list;
         }
 
-        public void SetLayout<T>() where T : Layout =>
+        public void SetLayout<T>() where T : Layout
+        {
             ActiveLayout = (T)Activator.CreateInstance(typeof(T), (Func<List<List<Control>>>)(() => controls));
+        }
 
-        public void RefreshLayout() => ActiveLayout.LayoutControls();
+        public void RefreshLayout()
+        {
+            ActiveLayout.LayoutControls();
+        }
 
-        private void CreateConfigControls() => controls = elements.GetControls();
+        private void CreateConfigControls()
+        {
+            controls = elements.GetControls();
+        }
 
         private static Delegate GetDelegate(MethodInfo methodInfo)
         {
@@ -76,10 +87,15 @@ namespace NeverSerender.Config
             elements.Add(name, attribute.GetElement<T>(), new ElementProperty<T>(Getter, Setter), GetVisible);
             return;
 
-            Visibility GetVisible() =>
-                (bool)(condition?.GetValue(config) ?? true) ? Visibility.Shown : visibility;
+            Visibility GetVisible()
+            {
+                return (bool)(condition?.GetValue(config) ?? true) ? Visibility.Shown : visibility;
+            }
 
-            T Getter() => (T)property.GetValue(config);
+            T Getter()
+            {
+                return (T)property.GetValue(config);
+            }
 
             void Setter(T value)
             {
@@ -141,7 +157,7 @@ namespace NeverSerender.Config
                     ? null
                     : type.GetProperty(conditional.FieldName,
                         BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-                var visibility = (conditional?.Hide ?? true) ? Visibility.Hidden : Visibility.Disabled;
+                var visibility = conditional?.Hide ?? true ? Visibility.Hidden : Visibility.Disabled;
 
                 foreach (var attribute in methodInfo.GetCustomAttributes())
                 {
@@ -159,8 +175,10 @@ namespace NeverSerender.Config
 
                     continue;
 
-                    Visibility GetVisible() =>
-                        (bool)(condition?.GetValue(config) ?? true) ? Visibility.Shown : visibility;
+                    Visibility GetVisible()
+                    {
+                        return (bool)(condition?.GetValue(config) ?? true) ? Visibility.Shown : visibility;
+                    }
                 }
             }
         }

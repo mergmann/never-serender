@@ -9,9 +9,9 @@ namespace NeverSerender.UserInterface.Elements.Attributes
             FieldName = fieldName;
             Hide = hide;
         }
-        
+
         public string FieldName { get; }
-        
+
         public bool Hide { get; }
     }
 }

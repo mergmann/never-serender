@@ -29,13 +29,13 @@ namespace NeverSerender
         private const string OutPath = "Z:/home/mattisb/spacemodel/model.semodel";
 
         public const string Name = "NeverSerender";
-
-        public static Plugin Instance { get; private set; }
+        private Capture capture;
+        private ConfigScreen exportConfigScreen;
 
         private ConfigScreen globalConfigScreen;
-        private ConfigScreen exportConfigScreen;
-        private KeyBind openSettingsBind = new KeyBind(MyKeys.R, ctrl: true);
-        private Capture capture;
+        private KeyBind openSettingsBind = new KeyBind(MyKeys.R, true);
+
+        public static Plugin Instance { get; private set; }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
         public void Init(object gameInstance)
@@ -55,58 +55,15 @@ namespace NeverSerender
             MyLog.Default.WriteLineAndConsole("NeverSerender Plugin initialized");
         }
 
-        public void Dispose() => Instance = null;
+        public void Dispose()
+        {
+            Instance = null;
+        }
 
         public void Update()
         {
             globalConfigScreen.Update();
             exportConfigScreen.Update();
-        }
-
-        [MySessionComponentDescriptor(MyUpdateOrder.AfterSimulation)]
-        public class NeverSerenderPluginSession : MySessionComponentBase
-        {
-            public override void Init(MyObjectBuilder_SessionComponent sessionComponent)
-            {
-                MyLog.Default.WriteLineAndConsole("NeverSerender Session initialized");
-            }
-
-            public override void UpdateAfterSimulation()
-            {
-                if (MySession.Static == null || !MySession.Static.Ready)
-                    return;
-
-                if (Instance.openSettingsBind.NewPressed(MyInput.Static))
-                    Instance.OpenConfigDialog();
-
-                if (GlobalConfig.Current.ExportBind.IsPressed(MyInput.Static))
-                {
-                    if (Instance.capture != null)
-                    {
-                        // Stop currently running capture
-                        Instance.capture.Finish();
-                        Instance.capture = null;
-                        MessageCaptureStopped();
-                    }
-                    else
-                    {
-                        Instance.OpenExportDialog();
-                    }
-                }
-
-                // Step forward one frame if the capture is running
-                Instance.capture?.Step(1.0f / 60.0f);
-            }
-
-            public override void UpdatingStopped()
-            {
-                if (Instance.capture == null) return;
-
-                // Stop currently running capture
-                Instance.capture.Finish();
-                Instance.capture = null;
-                MessageCaptureStopped();
-            }
         }
 
         // ReSharper disable once UnusedMember.Global
@@ -220,9 +177,7 @@ namespace NeverSerender
                 MyStringId.NullOrEmpty,
                 result => { },
                 -1,
-                MyGuiScreenMessageBox.ResultEnum.CANCEL,
-                true,
-                null));
+                MyGuiScreenMessageBox.ResultEnum.CANCEL));
         }
 
         private void MessageBoxOverwrite(Action<MyGuiScreenMessageBox.ResultEnum> callback)
@@ -237,9 +192,7 @@ namespace NeverSerender
                 MyStringId.GetOrCompute("No"),
                 callback,
                 -1,
-                MyGuiScreenMessageBox.ResultEnum.NO,
-                true,
-                null));
+                MyGuiScreenMessageBox.ResultEnum.NO));
         }
 
         private static void MessageCaptureStopped()
@@ -254,9 +207,53 @@ namespace NeverSerender
                 MyStringId.NullOrEmpty,
                 result => { },
                 -1,
-                MyGuiScreenMessageBox.ResultEnum.CANCEL,
-                true,
-                null));
+                MyGuiScreenMessageBox.ResultEnum.CANCEL));
+        }
+
+        [MySessionComponentDescriptor(MyUpdateOrder.AfterSimulation)]
+        public class NeverSerenderPluginSession : MySessionComponentBase
+        {
+            public override void Init(MyObjectBuilder_SessionComponent sessionComponent)
+            {
+                MyLog.Default.WriteLineAndConsole("NeverSerender Session initialized");
+            }
+
+            public override void UpdateAfterSimulation()
+            {
+                if (MySession.Static == null || !MySession.Static.Ready)
+                    return;
+
+                if (Instance.openSettingsBind.NewPressed(MyInput.Static))
+                    Instance.OpenConfigDialog();
+
+                if (GlobalConfig.Current.ExportBind.IsPressed(MyInput.Static))
+                {
+                    if (Instance.capture != null)
+                    {
+                        // Stop currently running capture
+                        Instance.capture.Finish();
+                        Instance.capture = null;
+                        MessageCaptureStopped();
+                    }
+                    else
+                    {
+                        Instance.OpenExportDialog();
+                    }
+                }
+
+                // Step forward one frame if the capture is running
+                Instance.capture?.Step(1.0f / 60.0f);
+            }
+
+            public override void UpdatingStopped()
+            {
+                if (Instance.capture == null) return;
+
+                // Stop currently running capture
+                Instance.capture.Finish();
+                Instance.capture = null;
+                MessageCaptureStopped();
+            }
         }
     }
 }

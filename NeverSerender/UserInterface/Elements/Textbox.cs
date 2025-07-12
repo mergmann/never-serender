@@ -1,5 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using NeverSerender.UserInterface.Tools;
 using Sandbox.Graphics.GUI;
 
@@ -7,6 +6,9 @@ namespace NeverSerender.UserInterface.Elements
 {
     internal class TextboxElement : IElement<string>
     {
+        public string Description { get; set; }
+        public string Label { get; set; }
+
         public List<Control> GetControls(string name, ElementProperty<string> property, bool enabled)
         {
             var textBox = new MyGuiControlTextbox(defaultText: property.Get())
@@ -24,9 +26,5 @@ namespace NeverSerender.UserInterface.Elements
                 new Control(textBox, fillFactor: 1f)
             };
         }
-
-
-        public string Description { get; set; }
-        public string Label { get; set; }
     }
 }

@@ -5,8 +5,7 @@ namespace NeverSerender.UserInterface.Elements.Attributes
 {
     public interface IElementAttribute
     {
-        IElement<T> GetElement<T>();
-        
         List<Type> SupportedTypes { get; }
+        IElement<T> GetElement<T>();
     }
 }

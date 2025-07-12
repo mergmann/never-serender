@@ -10,11 +10,18 @@ namespace NeverSerender.UserInterface.Elements
 {
     internal class SliderFloatElement : IElement<float>
     {
+        public string Description { get; set; }
+        public string Label { get; set; }
+        public float Max { get; set; }
+        public float Min { get; set; }
+        public float Step { get; set; }
+
         public List<Control> GetControls(string name, ElementProperty<float> property, bool enabled)
         {
             var valueLabel = new MyGuiControlLabel();
 
-            var slider = new MyGuiControlSlider(toolTip: Description, defaultValue: property.Get(), minValue: Min, maxValue: Max)
+            var slider = new MyGuiControlSlider(toolTip: Description, defaultValue: property.Get(), minValue: Min,
+                maxValue: Max)
             {
                 MinimumStepOverride = Step,
                 LabelDecimalPlaces = (int)Math.Max(1, Math.Ceiling(-Math.Log10(2f * Step))),
@@ -25,7 +32,7 @@ namespace NeverSerender.UserInterface.Elements
             slider.SliderSetValueManual = SpecifyValue;
 
             ValueUpdate(slider);
-            
+
             property.Changed += () =>
             {
                 slider.Value = property.Get();
@@ -39,7 +46,7 @@ namespace NeverSerender.UserInterface.Elements
                 new Control(slider, fillFactor: 1f, rightMargin: 0.005f),
                 new Control(valueLabel, minWidth: 0.06f)
             };
-            
+
             void ValueUpdate(MyGuiControlSlider element)
             {
                 property.Set(element.Value);
@@ -67,11 +74,5 @@ namespace NeverSerender.UserInterface.Elements
                 return true;
             }
         }
-        
-        public  string Description { get; set; }
-        public  string Label { get; set; }
-        public  float Max { get; set; }
-        public  float Min { get; set; }
-        public  float Step { get; set; }
     }
 }

@@ -135,7 +135,7 @@ namespace NeverSerender.Output
             Write(vector.Y);
             Write(vector.Z);
         }
-        
+
         public void Write(Vector3S vector)
         {
             Write(vector.X);
@@ -293,7 +293,7 @@ namespace NeverSerender.Output
             Write((ushort)Output.PropertyId.Color);
             Write(value);
         }
-        
+
         public void PropertyColorMask(Vector3UByte value)
         {
             Write((ushort)Output.PropertyId.ColorMask);
@@ -353,19 +353,19 @@ namespace NeverSerender.Output
             Write((byte)kind);
             Write(value);
         }
-        
+
         public void PropertyVector3(Vector3 value)
         {
             Write((ushort)Output.PropertyId.Vector3);
             Write(value);
         }
-        
+
         public void PropertyVector3S(Vector3S value)
         {
             Write((ushort)Output.PropertyId.Vector3S);
             Write(value);
         }
-        
+
         public void PropertyOrientation(MatrixI orientation)
         {
             Write((ushort)Output.PropertyId.Orientation);

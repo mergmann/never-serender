@@ -8,24 +8,28 @@ namespace NeverSerender.UserInterface.Elements
 {
     public class ElementList
     {
-        private class ElementData
-        {
-            public IElement Element { get; set; }
-            public ElementProperty Property { get; set; }
-            public Visibility LastVisibility { get; set; }
-            public Func<Visibility> GetVisibility { get; set; }
-        }
-
         private readonly Dictionary<string, ElementData> elements = new Dictionary<string, ElementData>();
 
         public void Add<T>(string name, IElement<T> element, ElementProperty<T> property,
-            Func<Visibility> visibility) =>
+            Func<Visibility> visibility)
+        {
             elements.Add(name, new ElementData { Element = element, Property = property, GetVisibility = visibility });
+        }
 
-        private ElementProperty GetProperty(string name) => elements[name].Property;
-        public void Notify(string name) => GetProperty(name).Notify();
+        private ElementProperty GetProperty(string name)
+        {
+            return elements[name].Property;
+        }
 
-        public bool DetectVisibilityChanges() => elements.Values.Any(el => el.LastVisibility != el.GetVisibility());
+        public void Notify(string name)
+        {
+            GetProperty(name).Notify();
+        }
+
+        public bool DetectVisibilityChanges()
+        {
+            return elements.Values.Any(el => el.LastVisibility != el.GetVisibility());
+        }
 
         private static List<Control> GetControlsHelper<T>(string name, ElementData data, Visibility visibility)
         {
@@ -56,6 +60,14 @@ namespace NeverSerender.UserInterface.Elements
             }
 
             return controls;
+        }
+
+        private class ElementData
+        {
+            public IElement Element { get; set; }
+            public ElementProperty Property { get; set; }
+            public Visibility LastVisibility { get; set; }
+            public Func<Visibility> GetVisibility { get; set; }
         }
     }
 }

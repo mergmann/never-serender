@@ -1,16 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Reflection;
-using System.Text;
 using NeverSerender.UserInterface.Tools;
-using Sandbox.Game.Gui;
-using Sandbox.Graphics.GUI;
-using VRage;
-using VRage.Game;
 using VRage.Input;
-using VRage.ModAPI;
-using VRage.Utils;
-using VRageMath;
 
 namespace NeverSerender.UserInterface.Elements.Attributes
 {
@@ -25,11 +16,14 @@ namespace NeverSerender.UserInterface.Elements.Attributes
             this.description = description;
         }
 
-        public IElement<T> GetElement<T>() => (IElement<T>)new KeybindElement
+        public IElement<T> GetElement<T>()
         {
-            Description = description,
-            Label = label,
-        };
+            return (IElement<T>)new KeybindElement
+            {
+                Description = description,
+                Label = label
+            };
+        }
 
         public List<Type> SupportedTypes => new List<Type> { typeof(KeyBind) };
 

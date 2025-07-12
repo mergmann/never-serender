@@ -18,6 +18,9 @@ namespace NeverSerender.UserInterface.Elements
         private Func<KeyBind> propertyGetter;
         private Action<KeyBind> propertySetter;
 
+        public string Description { get; set; }
+        public string Label { get; set; }
+
         // TODO: Change detection
         public List<Control> GetControls(string name, ElementProperty<KeyBind> property, bool enabled)
         {
@@ -64,7 +67,7 @@ namespace NeverSerender.UserInterface.Elements
             return new List<Control>
             {
                 new Control(label, minWidth: Control.LabelMinWidth),
-                new Control(button),
+                new Control(button)
             };
         }
 
@@ -129,9 +132,9 @@ namespace NeverSerender.UserInterface.Elements
             userData.Control.AppendBoundButtonNames(ref output, userData.Device);
 
             userData.Control.GetKeyboardModifier();
-            
+
             var modifiers = userData.Control.GetKeyboardModifier();
-            
+
             var binding = propertyGetter();
             binding.Key = userData.Control.GetKeyboardControl();
             binding.Ctrl = modifiers.HasFlag(MyKeyboardModifiers.Control);
@@ -155,8 +158,5 @@ namespace NeverSerender.UserInterface.Elements
                 Device = device;
             }
         }
-        
-        public string Description { get; set; }
-        public string Label { get; set; }
     }
 }

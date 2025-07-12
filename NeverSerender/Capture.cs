@@ -157,19 +157,15 @@ namespace NeverSerender
             // mainLog.WriteLine($"transforms {transforms?.Length} bones {bones?.Length} mapping {mapping?.Length}");
 
             if (settings.ExportEntityIds == null)
-            {
                 foreach (var entity in MyEntities.GetEntities())
                     TrackEntity(entity, grids);
-            }
             else
-            {
                 foreach (var entityId in settings.ExportEntityIds)
                 {
                     var entity = MyEntities.GetEntityById(entityId);
                     if (entity != null)
                         TrackEntity(entity, grids);
                 }
-            }
 
             var lights = exporter.GetLights();
 
@@ -193,7 +189,7 @@ namespace NeverSerender
 
             if (!settings.ExportNonGrids && !(entity is MyCubeGrid))
                 return;
-            
+
             trackedEntities.Add(entity);
 
             if (!(entity is MyCubeGrid grid)) return;

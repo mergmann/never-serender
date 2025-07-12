@@ -13,7 +13,7 @@ TARGET="$(dirname $0)/../Bin64/Plugins/Local"
 mkdir -p "$TARGET"
 
 echo
-echo "Deploying CLIENT plugin binary:"
+echo "Deploying binary:"
 echo
 
 while true; do

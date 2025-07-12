@@ -17,12 +17,15 @@ namespace NeverSerender.UserInterface.Elements.Attributes
             this.description = description;
         }
 
-        public IElement<T> GetElement<T>() => (IElement<T>)new ColorElement
+        public IElement<T> GetElement<T>()
         {
-            Description = description,
-            Label = label,
-            HasAlpha = hasAlpha,
-        };
+            return (IElement<T>)new ColorElement
+            {
+                Description = description,
+                Label = label,
+                HasAlpha = hasAlpha
+            };
+        }
 
         public List<Type> SupportedTypes { get; } = new List<Type> { typeof(Color) };
     }

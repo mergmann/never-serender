@@ -1,5 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using NeverSerender.UserInterface.Tools;
 using Sandbox.Graphics.GUI;
 using VRage.Game;
@@ -10,6 +9,10 @@ namespace NeverSerender.UserInterface.Elements
     internal class ColorElement : IElement<Color>
     {
         private Color originalBorderColor;
+
+        public string Description { get; set; }
+        public bool HasAlpha { get; set; }
+        public string Label { get; set; }
 
         public List<Control> GetControls(string name, ElementProperty<Color> property, bool enabled)
         {
@@ -69,9 +72,5 @@ namespace NeverSerender.UserInterface.Elements
                 new Control(textBox, textBox.Size.X)
             };
         }
-
-        public string Description { get; set; }
-        public bool HasAlpha { get; set; }
-        public string Label { get; set; }
     }
 }

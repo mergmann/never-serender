@@ -1,7 +1,6 @@
 using System;
 using System.IO;
 using System.Xml.Serialization;
-using NeverSerender;
 using VRage.FileSystem;
 using VRage.Utils;
 

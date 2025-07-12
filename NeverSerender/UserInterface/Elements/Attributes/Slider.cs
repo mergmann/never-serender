@@ -1,10 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Reflection;
-using NeverSerender.UserInterface.Tools;
-using Sandbox;
-using Sandbox.Graphics.GUI;
-using VRage.Utils;
 
 namespace NeverSerender.UserInterface.Elements.Attributes
 {

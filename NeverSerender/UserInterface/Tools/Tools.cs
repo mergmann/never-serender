@@ -75,7 +75,7 @@ namespace NeverSerender.UserInterface.Tools
                 Convert.ToInt16(match.Groups[4].Value, 16));
             return true;
         }
-        
+
         public static MethodInfo GetInterfaceMethod(Type interfaceType, string name, Type type)
         {
             var interfaceMethod = interfaceType.GetMethod(name);

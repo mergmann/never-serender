@@ -7,7 +7,6 @@ using NeverSerender.Output;
 using NeverSerender.Snapshot;
 using NeverSerender.Tools;
 using Sandbox.Definitions;
-using SpaceEngineers.Game.Entities.Blocks;
 using VRage.Game.Entity;
 using VRage.Game.Models;
 using VRage.Import;
@@ -34,11 +33,11 @@ namespace NeverSerender
 
         private readonly MiniLog log;
         private readonly MaterialOverrides materialOverrides = new MaterialOverrides();
-
-        private readonly Dictionary<long, uint> trackedEntityIds = new Dictionary<long, uint>();
         private readonly Dictionary<(long, Vector3I), uint> trackedBlockIds = new Dictionary<(long, Vector3I), uint>();
 
-            private readonly Dictionary<(uint, bool), uint> trackedLightIds = new Dictionary<(uint, bool), uint>();
+        private readonly Dictionary<long, uint> trackedEntityIds = new Dictionary<long, uint>();
+
+        private readonly Dictionary<(uint, bool), uint> trackedLightIds = new Dictionary<(uint, bool), uint>();
 
         private readonly Dictionary<uint, LightSnapshot> trackedLights = new Dictionary<uint, LightSnapshot>();
 
@@ -165,9 +164,9 @@ namespace NeverSerender
             uint? model = null;
             if (entity.Model != null)
                 model = ProcessModel(entity.Model);
-            
+
             var parent = entity.Parent.HasValue ? (uint?)trackedEntityIds[entity.Parent.Value] : null;
-            
+
             var properties = new EntityProperties
             {
                 EntityId = entity.EntityId,
@@ -179,9 +178,9 @@ namespace NeverSerender
                 WorldMatrix = entity.WorldMatrix,
                 IsPreview = entity.IsPreview,
                 Show = entity.Show,
-                Remove = entity.Remove,
+                Remove = entity.Remove
             };
-            
+
             writer.Entity(id, properties, model);
         }
 
@@ -205,12 +204,12 @@ namespace NeverSerender
                 id = trackedEntityId++;
                 trackedBlockIds.Add((gridId, block.Position), id);
             }
-            
+
             // log.WriteLine($"Process Block {slimBlock.BlockDefinition.Id}");
-            
+
             if (block.EntityId.HasValue)
                 trackedEntityIds.Add(block.EntityId.Value, id);
-            
+
             var skin = block.Skin;
             var colorOverride = materialOverrides.GetColorOverride(skin);
 
@@ -222,7 +221,7 @@ namespace NeverSerender
                 Position = new Vector3S(block.Position),
                 Translation = block.Translation,
                 Orientation = block.Orientation,
-                Color = ColorTools.PackColorMask(colorOverride ?? block.Color),
+                Color = ColorTools.PackColorMask(colorOverride ?? block.Color)
             };
 
             var cubeDefinition = block.Definition;
@@ -248,13 +247,13 @@ namespace NeverSerender
 
             writer.Block(id, properties);
         }
-        
+
         private void RemoveBlock(long gridId, Vector3I position)
         {
             if (!trackedBlockIds.TryGetValue((gridId, position), out var id))
                 return;
             trackedBlockIds.Remove((gridId, position));
-            
+
             writer.RemoveBlock(id, new Vector3S(position));
         }
 

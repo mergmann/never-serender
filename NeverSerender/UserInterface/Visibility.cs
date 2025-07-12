@@ -4,6 +4,6 @@ namespace NeverSerender.UserInterface
     {
         Shown,
         Hidden,
-        Disabled,
+        Disabled
     }
 }

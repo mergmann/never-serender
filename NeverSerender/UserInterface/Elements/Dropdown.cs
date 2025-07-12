@@ -6,8 +6,12 @@ using Sandbox.Graphics.GUI;
 
 namespace NeverSerender.UserInterface.Elements
 {
-    internal class DropdownElement<T> : IElement<T> where T: struct, Enum
+    internal class DropdownElement<T> : IElement<T> where T : struct, Enum
     {
+        public string Description { get; set; }
+        public string Label { get; set; }
+        public int VisibleRows { get; set; }
+
         public List<Control> GetControls(string name, ElementProperty<T> property, bool enabled)
         {
             var selectedEnum = property.Get();
@@ -19,9 +23,9 @@ namespace NeverSerender.UserInterface.Elements
 
             dropdown.ItemSelected += OnItemSelect;
             dropdown.SelectItemByIndex(Convert.ToInt32(selectedEnum));
-            
+
             dropdown.Enabled = enabled;
-            
+
             property.Changed += () => dropdown.SelectItemByIndex(Convert.ToInt32(property.Get()));
 
             var label = UiTools.GetLabelOrDefault(name, Label);
@@ -54,9 +58,5 @@ namespace NeverSerender.UserInterface.Elements
                 "$1 $2"
             );
         }
-
-        public string Description { get; set; }
-        public string Label { get; set; }
-        public int VisibleRows { get; set; }
     }
 }

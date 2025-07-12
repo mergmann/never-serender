@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Collections.Generic;
 using NeverSerender.Config;
 using NeverSerender.UserInterface.Layouts;
 using Sandbox;
@@ -12,8 +11,6 @@ namespace NeverSerender.UserInterface
     {
         private readonly ConfigGenerator config;
         private readonly string friendlyName;
-
-        public event Action Removed;
 
         public ConfigScreen(
             ConfigGenerator config,
@@ -38,11 +35,16 @@ namespace NeverSerender.UserInterface
             CloseButtonEnabled = true;
         }
 
-        public override string GetFriendlyName() => friendlyName;
+        public event Action Removed;
+
+        public override string GetFriendlyName()
+        {
+            return friendlyName;
+        }
 
         public void Update()
         {
-            if(config.Update())
+            if (config.Update())
                 RecreateControls(true);
         }
 

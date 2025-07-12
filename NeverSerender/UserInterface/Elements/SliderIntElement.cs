@@ -4,12 +4,17 @@ using System.Reflection;
 using NeverSerender.UserInterface.Tools;
 using Sandbox;
 using Sandbox.Graphics.GUI;
-using VRage.Utils;
 
 namespace NeverSerender.UserInterface.Elements
 {
     internal class SliderIntElement : IElement<int>
     {
+        public string Description { get; set; }
+        public string Label { get; set; }
+        public int Max { get; set; }
+        public int Min { get; set; }
+        public int Step { get; set; }
+
         public List<Control> GetControls(string name, ElementProperty<int> property, bool enabled)
         {
             var valueLabel = new MyGuiControlLabel();
@@ -29,7 +34,7 @@ namespace NeverSerender.UserInterface.Elements
             slider.SliderSetValueManual = SpecifyValue;
 
             ValueUpdate(slider);
-            
+
             property.Changed += () =>
             {
                 slider.Value = Convert.ToSingle(property.Get());
@@ -73,11 +78,5 @@ namespace NeverSerender.UserInterface.Elements
                 return true;
             }
         }
-        
-        public string Description { get; set; }
-        public string Label { get; set; }
-        public int Max { get; set; }
-        public int Min { get; set; }
-        public int Step { get; set; }
     }
 }

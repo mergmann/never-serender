@@ -1,6 +1,5 @@
 ﻿using System;
 using System.IO;
-using NeverSerender.Config;
 using VRageMath;
 
 namespace NeverSerender.Output
@@ -106,7 +105,7 @@ namespace NeverSerender.Output
                 w.PropertyEnd();
             });
         }
-        
+
         public void RemoveEntity(uint id)
         {
             writer.Event(EventId.Entity, id, w =>
@@ -144,7 +143,7 @@ namespace NeverSerender.Output
                 w.PropertyEnd();
             });
         }
-        
+
         public void RemoveBlock(uint id, Vector3S position)
         {
             writer.Event(EventId.Block, id, w =>

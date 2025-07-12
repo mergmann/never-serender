@@ -30,6 +30,6 @@ namespace NeverSerender.Output
         Texture = 0x1705,
         Vector3 = 0x180C,
         Vector3S = 0x1806,
-        Orientation = 0x1901,
+        Orientation = 0x1901
     }
 }

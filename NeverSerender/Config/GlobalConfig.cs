@@ -8,11 +8,11 @@ namespace NeverSerender.Config
     {
         public static readonly GlobalConfig Default = new GlobalConfig();
         public static readonly GlobalConfig Current = ConfigStorage.Load();
-        
-        private string outPath = "SpaceExport/";
-        private string logPath = "SpaceExport/export.log";
+        private bool experimental;
         private KeyBind exportBind = new KeyBind(MyKeys.None);
-        private bool experimental = false;
+        private string logPath = "SpaceExport/export.log";
+
+        private string outPath = "SpaceExport/";
 
         [Textbox("Output path", "Folder where models are exported to")]
         public string OutPath
@@ -34,7 +34,7 @@ namespace NeverSerender.Config
             get => exportBind;
             set => SetField(ref exportBind, value);
         }
-        
+
         [Checkbox("Experimental", "Keybind used to show the export dialog")]
         public bool Experimental
         {

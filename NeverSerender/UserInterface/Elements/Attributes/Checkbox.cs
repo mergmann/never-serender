@@ -14,11 +14,14 @@ namespace NeverSerender.UserInterface.Elements.Attributes
             this.description = description;
         }
 
-        public IElement<T> GetElement<T>() => (IElement<T>)new CheckboxElement
+        public IElement<T> GetElement<T>()
         {
-            Label = label,
-            Description = description
-        };
+            return (IElement<T>)new CheckboxElement
+            {
+                Label = label,
+                Description = description
+            };
+        }
 
         public List<Type> SupportedTypes { get; } = new List<Type> { typeof(bool) };
     }
