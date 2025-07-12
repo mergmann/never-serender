@@ -7,6 +7,6 @@ namespace NeverSerender.UserInterface.Elements
     
     public interface IElement<T> : IElement
     {
-        List<Control> GetControls(string name, ElementProperty<T> property);
+        List<Control> GetControls(string name, ElementProperty<T> property, bool enabled);
     }
 }

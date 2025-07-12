@@ -8,7 +8,7 @@ namespace NeverSerender.UserInterface.Elements
 {
     internal class DropdownElement<T> : IElement<T> where T: struct, Enum
     {
-        public List<Control> GetControls(string name, ElementProperty<T> property)
+        public List<Control> GetControls(string name, ElementProperty<T> property, bool enabled)
         {
             var selectedEnum = property.Get();
 
@@ -19,6 +19,8 @@ namespace NeverSerender.UserInterface.Elements
 
             dropdown.ItemSelected += OnItemSelect;
             dropdown.SelectItemByIndex(Convert.ToInt32(selectedEnum));
+            
+            dropdown.Enabled = enabled;
             
             property.Changed += () => dropdown.SelectItemByIndex(Convert.ToInt32(property.Get()));
 

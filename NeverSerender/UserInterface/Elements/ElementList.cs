@@ -1,61 +1,58 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Reflection;
-using NeverSerender.UserInterface.Tools;
 using VRage.Utils;
 
 namespace NeverSerender.UserInterface.Elements
 {
     public class ElementList
     {
-        private class ElementData<T>
+        private class ElementData
         {
-            public IElement<T> Element { get; set; }
-            public ElementProperty<T> Property { get; set; }
+            public IElement Element { get; set; }
+            public ElementProperty Property { get; set; }
+            public Visibility LastVisibility { get; set; }
+            public Func<Visibility> GetVisibility { get; set; }
         }
 
-        private readonly Dictionary<string, object> elements = new Dictionary<string, object>();
+        private readonly Dictionary<string, ElementData> elements = new Dictionary<string, ElementData>();
 
-        public void Add<T>(string name, IElement<T> element, ElementProperty<T> property) =>
-            elements.Add(name, new ElementData<T> { Element = element, Property = property });
+        public void Add<T>(string name, IElement<T> element, ElementProperty<T> property,
+            Func<Visibility> visibility) =>
+            elements.Add(name, new ElementData { Element = element, Property = property, GetVisibility = visibility });
 
-        private static ElementProperty GetPropertyHelper<T>(object data)
-        {
-            var casted = (ElementData<T>)data;
-            return casted.Property;
-        }
-
-        private ElementProperty GetProperty(string name)
-        {
-            var value = elements[name];
-            var elemType = value.GetType().GetGenericArguments()[0];
-            // ReSharper disable once PossibleNullReferenceException
-            var method = GetType().GetMethod(nameof(GetPropertyHelper), BindingFlags.Static | BindingFlags.NonPublic)
-                .MakeGenericMethod(elemType);
-            return (ElementProperty)method.Invoke(null, new object[] { value });
-        }
-
+        private ElementProperty GetProperty(string name) => elements[name].Property;
         public void Notify(string name) => GetProperty(name).Notify();
 
-        private static List<Control> GetControlsHelper<T>(string name, object data)
+        public bool DetectVisibilityChanges() => elements.Values.Any(el => el.LastVisibility != el.GetVisibility());
+
+        private static List<Control> GetControlsHelper<T>(string name, ElementData data, Visibility visibility)
         {
-            var casted = (ElementData<T>)data;
-            return casted.Element.GetControls(name, casted.Property);
+            var elem = (IElement<T>)data.Element;
+            var prop = (ElementProperty<T>)data.Property;
+            return elem.GetControls(name, prop, visibility == Visibility.Shown);
         }
 
         public List<List<Control>> GetControls()
         {
             var controls = new List<List<Control>>();
+
+            MyLog.Default.WriteLine("Get Controls");
             foreach (var pair in elements)
             {
-                MyLog.Default.WriteLine($"ElemenV {pair.Key}: {pair.Value}");
-                var elemType = pair.Value.GetType().GetGenericArguments()[0];
-                MyLog.Default.WriteLine($"Element {pair.Key}: {elemType?.Name}");
+                var visibility = pair.Value.GetVisibility();
+                pair.Value.LastVisibility = visibility;
+                if (visibility == Visibility.Hidden)
+                    continue;
+
+                MyLog.Default.WriteLine("Get Control: " + pair.Value.Property.GetType().Name);
+                var elemType = pair.Value.Property.GetType().GetGenericArguments()[0];
                 // ReSharper disable once PossibleNullReferenceException
                 var method = GetType()
                     .GetMethod(nameof(GetControlsHelper), BindingFlags.Static | BindingFlags.NonPublic)
                     .MakeGenericMethod(elemType);
-                controls.Add((List<Control>)method.Invoke(null, new object[] { pair.Key, pair.Value }));
+                controls.Add((List<Control>)method.Invoke(null, new object[] { pair.Key, pair.Value, visibility }));
             }
 
             return controls;

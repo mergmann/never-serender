@@ -9,11 +9,12 @@ namespace NeverSerender.UserInterface.Elements
 {
     internal class ButtonElement : IElement<Action>
     {
-        public List<Control> GetControls(string name, ElementProperty<Action> property)
+        public List<Control> GetControls(string name, ElementProperty<Action> property, bool enabled)
         {
             var label = UiTools.GetLabelOrDefault(name, Label);
             var button = new MyGuiControlButton(text: new StringBuilder(label), toolTip: Description);
             button.ButtonClicked += _ => property.Get()();
+            button.Enabled = enabled;
 
             return new List<Control>
             {

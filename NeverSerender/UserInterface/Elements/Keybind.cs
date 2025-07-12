@@ -19,15 +19,18 @@ namespace NeverSerender.UserInterface.Elements
         private Action<KeyBind> propertySetter;
 
         // TODO: Change detection
-        public List<Control> GetControls(string name, ElementProperty<KeyBind> property)
+        public List<Control> GetControls(string name, ElementProperty<KeyBind> property, bool enabled)
         {
             propertyGetter = property.Get;
             propertySetter = property.Set;
 
             var binding = property.Get();
 
-            var label = new MyGuiControlLabel(text: UiTools.GetLabelOrDefault(name, Label));
-            
+            var label = new MyGuiControlLabel(text: UiTools.GetLabelOrDefault(name, Label))
+            {
+                Enabled = enabled
+            };
+
             var modifiers = MyKeyboardModifiers.None;
             if (binding.Ctrl)
                 modifiers |= MyKeyboardModifiers.Control;

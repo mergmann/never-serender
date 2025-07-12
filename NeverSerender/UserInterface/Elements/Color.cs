@@ -11,7 +11,7 @@ namespace NeverSerender.UserInterface.Elements
     {
         private Color originalBorderColor;
 
-        public List<Control> GetControls(string name, ElementProperty<Color> property)
+        public List<Control> GetControls(string name, ElementProperty<Color> property, bool enabled)
         {
             var defaultColor = property.Get();
             var defaultColorHex = HasAlpha ? defaultColor.ToHexStringRgba() : defaultColor.ToHexStringRgb();
@@ -28,6 +28,9 @@ namespace NeverSerender.UserInterface.Elements
             {
                 Size = new Vector2(0.1f, 0.04f)
             };
+
+            sample.Enabled = enabled;
+            textBox.Enabled = enabled;
 
             originalBorderColor = textBox.BorderColor;
 

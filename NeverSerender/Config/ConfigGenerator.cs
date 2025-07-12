@@ -41,6 +41,8 @@ namespace NeverSerender.Config
         private static bool ValidateType(Type type, List<Type> typesList) =>
             typesList.Any(t => t.IsAssignableFrom(type));
 
+        public bool Update() => elements.DetectVisibilityChanges();
+
         public List<MyGuiControlBase> RecreateControls()
         {
             CreateConfigControls();
@@ -66,13 +68,18 @@ namespace NeverSerender.Config
             return Delegate.CreateDelegate(type, null, methodInfo);
         }
 
-        private void AddHelper<T>(string name, IElementAttribute attribute, IConfig config, PropertyInfo property)
+        private void AddHelper<T>(string name, IElementAttribute attribute, IConfig config, PropertyInfo property,
+            PropertyInfo condition, bool hide)
         {
-            elements.Add(name, attribute.GetElement<T>(), new ElementProperty<T>(Getter, Setter));
+            MyLog.Default.WriteLine($"{name}: {condition?.Name}");
+            var visibility = hide ? Visibility.Hidden : Visibility.Disabled;
+            elements.Add(name, attribute.GetElement<T>(), new ElementProperty<T>(Getter, Setter), GetVisible);
             return;
 
-            T Getter() => (T)property.GetValue(config);
+            Visibility GetVisible() =>
+                (bool)(condition?.GetValue(config) ?? true) ? Visibility.Shown : visibility;
 
+            T Getter() => (T)property.GetValue(config);
 
             void Setter(T value)
             {
@@ -91,10 +98,20 @@ namespace NeverSerender.Config
         private void ExtractAttributes(IConfig config)
         {
             elements = new ElementList();
+            var type = config.GetType();
 
-            foreach (var property in config.GetType().GetProperties())
+            foreach (var property in type.GetProperties())
             {
                 var name = property.Name;
+
+                var conditional = property.GetCustomAttribute<ConditionalAttribute>();
+                if (conditional != null)
+                    MyLog.Default.WriteLine(
+                        $"Conditional {name}: {conditional.FieldName}, {type.GetProperty(conditional.FieldName)}");
+                var condition = conditional == null
+                    ? null
+                    : type.GetProperty(conditional.FieldName,
+                        BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
 
                 foreach (var attribute in property.GetCustomAttributes())
                 {
@@ -109,7 +126,8 @@ namespace NeverSerender.Config
                     typeof(ConfigGenerator)
                         .GetMethod(nameof(AddHelper), BindingFlags.Instance | BindingFlags.NonPublic)
                         .MakeGenericMethod(property.PropertyType)
-                        .Invoke(this, new object[] { name, attribute, config, property });
+                        .Invoke(this,
+                            new object[] { name, attribute, config, property, condition, conditional?.Hide ?? true });
                 }
             }
 
@@ -118,7 +136,15 @@ namespace NeverSerender.Config
                 var name = methodInfo.Name;
                 var method = GetDelegate(methodInfo);
 
+                var conditional = methodInfo.GetCustomAttribute<ConditionalAttribute>();
+                var condition = conditional == null
+                    ? null
+                    : type.GetProperty(conditional.FieldName,
+                        BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                var visibility = (conditional?.Hide ?? true) ? Visibility.Hidden : Visibility.Disabled;
+
                 foreach (var attribute in methodInfo.GetCustomAttributes())
+                {
                     if (attribute is IElementAttribute element)
                     {
                         if (!ValidateType(typeof(Action), element.SupportedTypes))
@@ -128,8 +154,14 @@ namespace NeverSerender.Config
                                 + $"received {typeof(Delegate).FullName}");
 
                         elements.Add(name, element.GetElement<Action>(),
-                            new ElementProperty<Action>((Func<Action>)(() => (Action)method), null));
+                            new ElementProperty<Action>(() => (Action)method, null), GetVisible);
                     }
+
+                    continue;
+
+                    Visibility GetVisible() =>
+                        (bool)(condition?.GetValue(config) ?? true) ? Visibility.Shown : visibility;
+                }
             }
         }
     }

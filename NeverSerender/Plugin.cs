@@ -59,7 +59,8 @@ namespace NeverSerender
 
         public void Update()
         {
-            // ODOT: Put your update code here. It is called on every simulation frame! - No!
+            globalConfigScreen.Update();
+            exportConfigScreen.Update();
         }
 
         [MySessionComponentDescriptor(MyUpdateOrder.AfterSimulation)]
@@ -85,6 +86,7 @@ namespace NeverSerender
                         // Stop currently running capture
                         Instance.capture.Finish();
                         Instance.capture = null;
+                        MessageCaptureStopped();
                     }
                     else
                     {
@@ -94,6 +96,16 @@ namespace NeverSerender
 
                 // Step forward one frame if the capture is running
                 Instance.capture?.Step(1.0f / 60.0f);
+            }
+
+            public override void UpdatingStopped()
+            {
+                if (Instance.capture == null) return;
+
+                // Stop currently running capture
+                Instance.capture.Finish();
+                Instance.capture = null;
+                MessageCaptureStopped();
             }
         }
 
@@ -128,7 +140,7 @@ namespace NeverSerender
             var outPath = Path.Combine(MyFileSystem.UserDataPath, globalConfig.OutPath, exportConfig.FileName);
 
             var targetGrid = MyCubeGrid.GetTargetGrid();
-            
+
             List<long> entityIds = null;
             if (exportConfig.Scope == ExportConfig.ExportScope.SingleGrid)
             {
@@ -137,7 +149,7 @@ namespace NeverSerender
                     MessageBoxNoTargetGrid();
                     return;
                 }
-                
+
                 entityIds = new List<long> { targetGrid.EntityId };
             }
 
@@ -159,6 +171,8 @@ namespace NeverSerender
                     break;
             }
 
+            var animation = exportConfig.Animation && exportConfig.ShowAnimation;
+
             var settings = new ExporterSettings
             {
                 LogPath = logPath,
@@ -174,19 +188,21 @@ namespace NeverSerender
                 StartCapture();
                 return;
             }
-            
+
             MessageBoxOverwrite(result =>
             {
                 if (result == MyGuiScreenMessageBox.ResultEnum.YES)
                     StartCapture();
             });
-            
+
             return;
 
             void StartCapture()
             {
                 capture = new Capture(settings);
                 capture.Step(null);
+                // Keep the capture running until the export keybind is pressed again
+                if (animation) return;
                 capture.Finish();
                 capture = null;
             }
@@ -208,7 +224,7 @@ namespace NeverSerender
                 true,
                 null));
         }
-        
+
         private void MessageBoxOverwrite(Action<MyGuiScreenMessageBox.ResultEnum> callback)
         {
             MyGuiSandbox.AddScreen(MyGuiSandbox.CreateMessageBox(MyMessageBoxStyleEnum.Info,
@@ -222,6 +238,23 @@ namespace NeverSerender
                 callback,
                 -1,
                 MyGuiScreenMessageBox.ResultEnum.NO,
+                true,
+                null));
+        }
+
+        private static void MessageCaptureStopped()
+        {
+            MyGuiSandbox.AddScreen(MyGuiSandbox.CreateMessageBox(MyMessageBoxStyleEnum.Info,
+                MyMessageBoxButtonsType.OK,
+                new StringBuilder("Capture has been stopped."),
+                new StringBuilder("Capture stopped"),
+                MyStringId.GetOrCompute("Ok"),
+                MyStringId.NullOrEmpty,
+                MyStringId.NullOrEmpty,
+                MyStringId.NullOrEmpty,
+                result => { },
+                -1,
+                MyGuiScreenMessageBox.ResultEnum.CANCEL,
                 true,
                 null));
         }

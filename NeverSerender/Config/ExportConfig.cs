@@ -9,6 +9,7 @@ namespace NeverSerender.Config
         private string fileName = "model.spacemodel";
         private ExportScope scope = ExportScope.AllEntities;
         private ViewAnchor anchor = ViewAnchor.Origin;
+        private bool animation = false;
         
         [Textbox("File Name", "The name of the file to export the model to")]
         public string FileName
@@ -29,6 +30,16 @@ namespace NeverSerender.Config
         {
             get => anchor;
             set => SetField(ref anchor, value);
+        }
+        
+        public bool ShowAnimation => GlobalConfig.Current.Experimental;
+        
+        [Conditional(nameof(ShowAnimation), true)]
+        [Checkbox("Animation", "Record an animation until the export keybind is pressed again")]
+        public bool Animation
+        {
+            get => animation;
+            set => SetField(ref animation, value);
         }
         
         [Button("Export", "Export the current space model")]

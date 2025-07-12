@@ -528,6 +528,7 @@
         <Compile Include="UserInterface\Elements\Attributes\Button.cs" />
         <Compile Include="UserInterface\Elements\Attributes\Checkbox.cs" />
         <Compile Include="UserInterface\Elements\Attributes\Color.cs" />
+        <Compile Include="UserInterface\Elements\Attributes\Conditional.cs" />
         <Compile Include="UserInterface\Elements\Attributes\Dropdown.cs" />
         <Compile Include="UserInterface\Elements\Attributes\IElementAttribute.cs" />
         <Compile Include="UserInterface\Elements\Attributes\Keybind.cs" />
@@ -545,13 +546,13 @@
         <Compile Include="UserInterface\Elements\Keybind.cs" />
         <Compile Include="UserInterface\Elements\SliderIntElement.cs" />
         <Compile Include="UserInterface\Elements\Textbox.cs" />
-        <Compile Include="UserInterface\ExportScreen.cs" />
         <Compile Include="UserInterface\Layouts\Layout.cs" />
         <Compile Include="UserInterface\Layouts\None.cs" />
         <Compile Include="UserInterface\Layouts\Simple.cs" />
         <Compile Include="UserInterface\ConfigScreen.cs" />
         <Compile Include="UserInterface\Tools\KeyBind.cs" />
         <Compile Include="UserInterface\Tools\Tools.cs" />
+        <Compile Include="UserInterface\Visibility.cs" />
     </ItemGroup>
     <ItemGroup>
         <Content Include="deploy.bat" />

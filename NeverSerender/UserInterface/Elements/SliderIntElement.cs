@@ -10,7 +10,7 @@ namespace NeverSerender.UserInterface.Elements
 {
     internal class SliderIntElement : IElement<int>
     {
-        public List<Control> GetControls(string name, ElementProperty<int> property)
+        public List<Control> GetControls(string name, ElementProperty<int> property, bool enabled)
         {
             var valueLabel = new MyGuiControlLabel();
 
@@ -21,7 +21,8 @@ namespace NeverSerender.UserInterface.Elements
                 maxValue: Max,
                 intValue: true)
             {
-                MinimumStepOverride = Step
+                MinimumStepOverride = Step,
+                Enabled = enabled
             };
 
             slider.ValueChanged += ValueUpdate;

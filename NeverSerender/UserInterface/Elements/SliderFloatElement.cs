@@ -10,14 +10,15 @@ namespace NeverSerender.UserInterface.Elements
 {
     internal class SliderFloatElement : IElement<float>
     {
-        public List<Control> GetControls(string name, ElementProperty<float> property)
+        public List<Control> GetControls(string name, ElementProperty<float> property, bool enabled)
         {
             var valueLabel = new MyGuiControlLabel();
 
             var slider = new MyGuiControlSlider(toolTip: Description, defaultValue: property.Get(), minValue: Min, maxValue: Max)
             {
                 MinimumStepOverride = Step,
-                LabelDecimalPlaces = (int)Math.Max(1, Math.Ceiling(-Math.Log10(2f * Step)))
+                LabelDecimalPlaces = (int)Math.Max(1, Math.Ceiling(-Math.Log10(2f * Step))),
+                Enabled = enabled
             };
 
             slider.ValueChanged += ValueUpdate;

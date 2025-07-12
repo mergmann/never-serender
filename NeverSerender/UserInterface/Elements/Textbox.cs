@@ -7,9 +7,12 @@ namespace NeverSerender.UserInterface.Elements
 {
     internal class TextboxElement : IElement<string>
     {
-        public List<Control> GetControls(string name, ElementProperty<string> property)
+        public List<Control> GetControls(string name, ElementProperty<string> property, bool enabled)
         {
-            var textBox = new MyGuiControlTextbox(defaultText: property.Get());
+            var textBox = new MyGuiControlTextbox(defaultText: property.Get())
+            {
+                Enabled = enabled
+            };
             textBox.TextChanged += box => property.Set(box.Text);
             textBox.SetToolTip(Description);
             property.Changed += () => textBox.Text = property.Get();

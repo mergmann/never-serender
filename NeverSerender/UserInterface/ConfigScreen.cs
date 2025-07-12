@@ -40,6 +40,12 @@ namespace NeverSerender.UserInterface
 
         public override string GetFriendlyName() => friendlyName;
 
+        public void Update()
+        {
+            if(config.Update())
+                RecreateControls(true);
+        }
+
         public void SetLayout<T>() where T : Layout
         {
             config.SetLayout<T>();
