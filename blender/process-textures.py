@@ -15,7 +15,7 @@ from rich.panel import Panel
 from xxhash import xxh3_128
 
 DEFAULT_THREADS = os.cpu_count() or 1
-DEFAULT_RESIZE = 2
+DEFAULT_RESIZE = 0
 DEFAULT_THRESHOLD = 1024
 DEFAULT_RESAMPLING = 'LANCZOS'
 
@@ -23,7 +23,7 @@ parser = ArgumentParser(description='Process DDS textures to PNG format.')
 parser.add_argument('--input', type=str, required=True, help='Input directory containing DDS textures.')
 parser.add_argument('--output', type=str, required=True, help='Output directory for PNG textures.')
 parser.add_argument('--threads', type=int, default=DEFAULT_THREADS, help=f'Number of threads to use for processing. [default: {DEFAULT_THREADS}]')
-parser.add_argument('--resize', type=int, default=DEFAULT_RESIZE, help=f'Resize factor for images. [default: {DEFAULT_RESIZE}]')
+parser.add_argument('--resize', type=int, default=DEFAULT_RESIZE, help=f'Resize factor for images. Set to 0 to auto-resize [default: {DEFAULT_RESIZE}]')
 parser.add_argument('--threshold', type=int, default=DEFAULT_THRESHOLD, help=f'Threshold for resizing images. [default: {DEFAULT_THRESHOLD}]')
 parser.add_argument('--resampling', type=str, default=DEFAULT_RESAMPLING, help=f'Resampling method for resizing. [default: {DEFAULT_RESAMPLING}]')
 
@@ -104,9 +104,12 @@ def convert(inpath: str, outpath: str):
     dirname = os.path.dirname(outpath)
     os.makedirs(dirname, exist_ok=True)
     img = Image.open(inpath)
-    if RESIZE > 1:
-        w, h = img.size
-        if w > THRESHOLD and h > THRESHOLD:
+    w, h = img.size
+    if w > THRESHOLD and h > THRESHOLD:
+        if RESIZE == 0:
+            # Auto-resize to THRESHOLD or lower
+            img.thumbnail((THRESHOLD, THRESHOLD), RESAMPLING)
+        if RESIZE > 1:
             img = img.resize((w // RESIZE, h // RESIZE), RESAMPLING)
     img.save(outpath)
 
