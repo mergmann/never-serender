@@ -34,7 +34,7 @@ Mat4_Identity = (
 )
 
 Color_Default = (1.0, 1.0, 1.0)
-ColorMask_Default = (0, 0, 0)
+ColorMask_Default = (0.0, 0.0, 0.0)
 
 _T = TypeVar('_T')
 _TE = TypeVar('_TE', bound='Event')
@@ -128,6 +128,14 @@ class MaterialOverride:
     src_id: int
     dst_id: int
 
+def unpack_color_mask(mask: Vec3i) -> Vec3:
+    hb, sb, vb = mask
+    return (
+        hb / 255.0,
+        (sb / 127.5) - 1.0,
+        (vb / 127.5) - 1.0
+    )
+
 class PropertyTypes:
     EndHeader    = PropertyType[None]                   (0x0000, 'EndHeader',    lambda r: None)
     Id           = PropertyType[int]                    (0x0108, 'Id',           lambda r: r.i64())
@@ -145,7 +153,7 @@ class PropertyTypes:
     MaterialMods = PropertyType[list[MaterialOverride]] (0x0CFF, 'MaterialMods', lambda r: r.sized().all(r.mat_override))
     Model        = PropertyType[int]                    (0x0D04, 'Model',        lambda r: r.u32())
     Color        = PropertyType[Vec3]                   (0x0E0C, 'Color',        lambda r: r.vec3f())
-    ColorMask    = PropertyType[Vec3i]                  (0x0E03, 'ColorMask',    lambda r: r.vec3b())
+    ColorMask    = PropertyType[Vec3]                   (0x0E03, 'ColorMask',    lambda r: unpack_color_mask(r.vec3b()))
     Delta        = PropertyType[float]                  (0x0F04, 'Delta',        lambda r: r.f32())
     Cone         = PropertyType[Vec2]                   (0x1008, 'Cone',         lambda r: r.vec2f())
     Scale        = PropertyType[float]                  (0x1104, 'Scale',        lambda r: r.f32())
@@ -208,7 +216,7 @@ class BlockEvent(Event):
     position:    Vec3i
     translation: Vec3
     orientation: BlockOrientation
-    color:       Vec3i
+    color:       Vec3
     entity:      int | None
     name:        str | None
     model:       int | None
@@ -290,7 +298,7 @@ class EntityEvent(Event):
             props.pop(PropertyTypes.Matrix, None),
             props.pop(PropertyTypes.MatrixD, None),
             props.pop(PropertyTypes.Model, None),
-            props.get(PropertyTypes.Color, None),
+            props.get(PropertyTypes.ColorMask, None),
             props.get(PropertyTypes.Preview, None),
             props.get(PropertyTypes.Show, None),
             PropertyTypes.Remove in props,
@@ -560,6 +568,7 @@ class Data:
         self.lights    = dict[int, bpy.types.Object]()
         self.variants  = dict[VariantKey, bpy.types.Material]()
         self.overrides = dict[int, dict[int, int]]()
+        self.colors    = dict[int, Vec3]()
         self.frame     = -1
         self.collection_entities = bpy.data.collections.new('Entities')
         self.collection_lights = bpy.data.collections.new('Lights')
@@ -1167,7 +1176,7 @@ def create_model(data: Data, event: ModelEvent, overrides: dict[int, int], color
     for i, mesh_info in enumerate(event.meshes):
         obj.material_slots[i].link = 'OBJECT'
         obj.material_slots[i].material = get_material(data, mesh_info.mat_id, overrides)
-        obj['colorize'] = (colorize or (0, 0, 0)) + (1.0,)
+        obj['colorize'] = (colorize or ColorMask_Default) + (1.0,)
 
     return obj
 
@@ -1186,17 +1195,24 @@ def set_entity_position(data: Data, obj: bpy.types.Object, event: EntityEvent):
 def create_entity(data: Data, event: EntityEvent) -> bpy.types.Object | None:
     parent = None
     overrides = dict[int, int]()
+    color = ColorMask_Default
     if event.parent is not None:
         parent = data.entities.get(event.parent, None)
         overrides |= data.overrides.get(event.parent, {})
+        color = data.colors.get(event.parent, ColorMask_Default)
+
         if parent is None:
             print(f'Parent {event.parent} not found')
             return None
         
+    if event.color:
+        color = event.color
+
     data.overrides[event.id] = overrides
+    data.colors[event.id] = color
 
     if event.model is not None:
-        obj = create_model(data, data.models[event.model], overrides, event.color)
+        obj = create_model(data, data.models[event.model], overrides, color)
     else:
         obj = bpy.data.objects.new(f'nSEr EE', None)
         data.collection_entities.objects.link(obj)
@@ -1252,9 +1268,9 @@ def update_entity(data: Data, event: EntityEvent) -> None:
 def create_block(data: Data, event: BlockEvent) -> bpy.types.Object:
     if event.model is not None:
         overrides = dict((o.src_id, o.dst_id) for o in event.overrides)
-        hb, sb, vb = event.color
-        color = (hb / 255.0, (sb / 127.5) - 1.0, (vb / 127.5) - 1.0)
-        obj = create_model(data, data.models[event.model], overrides, color)
+        obj = create_model(data, data.models[event.model], overrides, event.color)
+        data.overrides[event.id] = overrides
+        data.colors[event.id] = event.color
     else:
         obj = bpy.data.objects.new(f'nSEr BE {event.id} {event.position}', None)
         data.collection_entities.objects.link(obj)
